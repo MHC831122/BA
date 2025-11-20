@@ -80,6 +80,28 @@
         }
         .fusion-item .btn-fuse:hover { background: #d81b60; }
         .fusion-item .btn-fuse:disabled { background: #555; cursor: default; }
+        
+        /* 招募區塊 */
+        .gacha-buttons { display: flex; justify-content: center; gap: 15px; margin-bottom: 15px; }
+        .btn-gacha { padding: 10px 20px; font-size: 1.1rem; font-weight: bold; border-radius: 6px; cursor: pointer; transition: background 0.3s; }
+        .btn-single { background: #03a9f4; color: white; border: none; }
+        .btn-ten { background: var(--gold); color: #000; border: 2px solid #fff; }
+
+        .gacha-box { 
+            display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; 
+            max-height: 250px; overflow-y: auto; padding: 10px; 
+        }
+        .gacha-card { 
+            width: 80px; text-align: center; padding: 5px; border-radius: 4px; 
+            background: #2e7d32; /* Default */
+            border: 1px solid #4caf50;
+            font-size: 0.8rem;
+        }
+        .SSR { background: #ffd700; color: #111; border-color: #fff; }
+        .SR { background: #e0e0e0; color: #111; border-color: #9e9e9e; }
+        .R { background: #42a5f5; color: white; border-color: #1565c0; }
+        .N { background: #9e9e9e; color: #111; border-color: #757575; }
+        .Cheer { background: var(--accent); color: white; border-color: #f8bbd0; }
     </style>
 </head>
 <body>
@@ -211,7 +233,10 @@
                 包含：歷史名將(SSR)、現役球星、<b>跨界啦啦隊(籃球/棒球)</b><br>
                 <span style="color:var(--accent)">★ 啦啦隊專屬效果：恢復體力、減少受傷</span>
             </p>
-            <button class="btn btn-gacha" onclick="gacha()">✨ 花費 $1000 招募</button>
+            <div class="gacha-buttons">
+                <button class="btn btn-gacha btn-single" onclick="gacha()">✨ 單抽 $1000</button>
+                <button class="btn btn-gacha btn-ten" onclick="gachaTen()">🌟 十連抽 $10000 (保底 SSR)</button>
+            </div>
             <div class="gacha-box" id="gacha-result"></div>
         </div>
     </div>
@@ -225,6 +250,8 @@ const POS_ZH = {
     'SS': '游擊手', 'LF': '左外野', 'CF': '中外野', 'RF': '右外野', 'DH': '指定打擊',
     'IF': '內野手', 'OF': '外野手' // 增加二軍用語
 };
+
+const RARITY_ORDER = { 'SSR': 4, 'SR': 3, 'R': 2, 'N': 1, 'Cheer': 0 }; // 用於保底時比較稀有度
 
 const CHEER_DB = [
     {n:"林襄",t:"Dragons",r:"SSR",buff:"打擊"}, {n:"李多慧",t:"Dragons",r:"SSR",buff:"速度"},
@@ -259,9 +286,22 @@ const TEAMS = {
 };
 
 const HISTORY = [
-    {n:"王建民",p:"P",r:"SSR"}, {n:"陳金鋒",p:"DH",r:"SSR"}, {n:"彭政閔",p:"1B",r:"SSR"}, 
-    {n:"黃平洋",p:"P",r:"SSR"}, {n:"張泰山",p:"3B",r:"SR"}, {n:"林智勝",p:"SS",r:"SR"}
+    {n:"王建民",p:"P",r:"SSR"}, {n:"彭政閔",p:"1B",r:"SSR"}, {n:"黃平洋",p:"P",r:"SSR"}, 
+    {n:"張泰山",p:"3B",r:"SR"}, {n:"林智勝",p:"SS",r:"SR"}
 ];
+
+// 新增旅外怪物隊伍
+const OVERSEAS_ALLSTARS = {
+    name: "🇹🇼 旅外怪物隊", logo: "⭐", 
+    roster: [
+        {n:"陳金鋒",p:"DH",r:"SSR", fixed: true}, {n:"郭泓志",p:"P",r:"SSR", fixed: true}, 
+        {n:"王柏融",p:"LF",r:"SSR", fixed: true}, {n:"張育成",p:"SS",r:"SSR", fixed: true},
+        {n:"吳哲源",p:"P",r:"SSR", fixed: true}, {n:"林子偉",p:"CF",r:"SSR", fixed: true},
+        {n:"陽岱鋼",p:"RF",r:"SSR", fixed: true}, {n:"高志綱",p:"C",r:"SSR", fixed: true},
+        {n:"王傳家",p:"1B",r:"SSR", fixed: true}, {n:"黃忠義",p:"2B",r:"SSR", fixed: true},
+        {n:"羅國龍",p:"3B",r:"SSR", fixed: true}, {n:"陳偉殷",p:"P",r:"SSR", fixed: true},
+    ]
+};
 
 // ================= 2. 系統狀態 =================
 let money = 1000000; 
@@ -368,7 +408,7 @@ function renderUI() {
     renderCheerSlots();
     renderCheerList(); 
     renderRosterList();
-    renderFusionCenter(); // <--- 新增渲染合成中心的函數
+    renderFusionCenter(); 
     document.getElementById('money-val').innerText = `$${money.toLocaleString()}`;
 }
 
@@ -376,24 +416,35 @@ function renderUI() {
 function getDuplicatePlayers() {
     const playerRoster = myRoster.filter(u => u.type === 'player');
     const counts = {};
-    const originals = {}; // 儲存最高等級的版本作為基底
+    const originals = {}; // 儲存 最高等級/最高稀有度/最高總評 的版本作為基底
 
     playerRoster.forEach(p => {
-        const key = p.name; // 用名稱來識別重複
+        const key = p.name; 
         counts[key] = (counts[key] || 0) + 1;
         
-        if (!originals[key] || p.level > originals[key].level) {
-            originals[key] = p; // 找到最高等級的卡作為合成目標的基礎
+        if (!originals[key]) {
+            originals[key] = p;
+        } else {
+            // 優先比較 Level, 其次 Rarity, 最後 Total Stat
+            if (p.level > originals[key].level) {
+                originals[key] = p;
+            } else if (p.level === originals[key].level) {
+                if (RARITY_ORDER[p.rarity] > RARITY_ORDER[originals[key].rarity]) {
+                    originals[key] = p;
+                } else if (p.rarity === originals[key].rarity && p.stats.total > originals[key].stats.total) {
+                    originals[key] = p;
+                }
+            }
         }
     });
 
     const duplications = [];
     for (const name in counts) {
-        if (counts[name] >= 10) { // 至少 10 張才能合成
+        if (counts[name] >= 10) { 
             duplications.push({
                 name: name,
                 count: counts[name],
-                baseUnit: originals[name] // 傳遞最高等級的卡片
+                baseUnit: originals[name] // 傳遞最高等級/評價的卡片
             });
         }
     }
@@ -417,19 +468,21 @@ function renderFusionCenter() {
         const fusionCount = Math.floor(d.count / 10);
         const player = d.baseUnit;
         const pos_zh = POS_ZH[player.pos] || player.pos;
+        const levelTxt = player.level > 0 ? `+${player.level}` : '';
+        const currentStats = player.stats.total;
 
         center.innerHTML += `
             <div class="fusion-item">
                 <div style="font-weight:bold;">
-                    <span class="r-${player.rarity}">${player.name}</span> (${pos_zh}) <small>Lv.${player.level}</small>
+                    <span class="r-${player.rarity}">${player.name}</span> <small>${levelTxt}</small> (${pos_zh})
                 </div>
                 <div style="font-size:0.9rem;">
-                    擁有數量: ${d.count} 張 (${fusionCount} 次合成機會)
+                    擁有數量: ${d.count} 張 | 基礎卡總評: ${currentStats}
                 </div>
                 <button class="btn-fuse" 
                         ${canFuse ? '' : 'disabled'}
                         onclick="fusePlayer('${d.name}', ${fusionCount})">
-                    合成 (${fusionCount * 10} 張卡) 
+                    合成 (${fusionCount * 10} 張卡) -> Lv.${player.level + fusionCount}
                 </button>
             </div>
         `;
@@ -451,98 +504,44 @@ function fusePlayer(playerName, fusionCount) {
         return;
     }
 
-    // 1. 移除所需數量的卡片 (從低級或普通的卡開始移除)
-    // 為了簡化，我們只移除前 N 張，但會保留陣容中的卡。
-    let cardsToRemove = [];
-    let keptCards = [];
+    // 1. 找出作為基礎升級的卡片 (最高等級/稀有度/總評)
+    let baseCard = getDuplicatePlayers().find(d => d.name === playerName).baseUnit;
     
-    // 確保不會移除任何正在陣容中使用的卡
+    // 2. 移除所需數量的卡片 (必須避開基礎卡)
+    let cardsToRemove = playerRoster.filter(p => p.id !== baseCard.id);
+    
+    // 確保不會移除任何正在陣容中使用的卡 (陣容中的卡片會被替換成升級後的卡)
     const usedIds = [...lineup.filter(p => p).map(p => p.id), ...Object.values(rotation).filter(p => p).map(p => p.id)];
     
-    // 將所有卡分組：使用的 vs 可移除的
-    playerRoster.forEach(p => {
-        if (usedIds.includes(p.id)) {
-            keptCards.push(p);
-        } else {
-            cardsToRemove.push(p);
-        }
-    });
-
-    // 檢查可移除的卡片是否足夠
-    if (cardsToRemove.length < requiredCards) {
-        alert("錯誤：您將某些卡片放在先發陣容或輪值中，無法移除。請先將卡片移出陣容。");
+    // 從可移除列表中排除正在使用的卡片 (如果它不是 baseCard)
+    const removableCards = cardsToRemove.filter(p => !usedIds.includes(p.id));
+    
+    if (removableCards.length < requiredCards) {
+        alert("錯誤：您的卡片數量足夠，但被選為基礎卡的卡片或其他卡片正在陣容中使用。請先將非基礎卡移出陣容。");
         return;
     }
-
-    // 執行移除
-    cardsToRemove.splice(0, requiredCards);
     
-    // 2. 找到最高等級的卡片，進行升級
-    let highestLevelCard = [...keptCards, ...cardsToRemove].sort((a, b) => b.level - a.level)[0];
+    // 執行移除：將這些卡從 myRoster 中刪除
+    const idsToRemove = removableCards.slice(0, requiredCards).map(c => c.id);
+    myRoster = myRoster.filter(p => !idsToRemove.includes(p.id));
+
+    // 3. 升級基礎卡片 (原地升級，不創建新ID)
+    const oldLevel = baseCard.level;
+    baseCard.level += fusionCount;
     
-    if (!highestLevelCard) {
-        // 如果這個球員的所有卡片都被移除了，則找回基礎資料重新創建
-        const baseData = TEAMS[Object.keys(TEAMS).find(k => TEAMS[k].roster.some(r => r.n === playerName))]
-            ?.roster.find(r => r.n === playerName) 
-            || HISTORY.find(h => h.n === playerName);
-        
-        if (!baseData) {
-            alert("錯誤：找不到該球員的基礎數據。");
-            return;
-        }
-
-        // 重新建立一張初始卡作為基礎
-        highestLevelCard = createUnit(baseData);
-    }
-
-
-    // 3. 創建新的強化卡
-    const newStats = {...highestLevelCard.stats};
-    const newLevel = highestLevelCard.level + fusionCount;
-
-    // 將所有數值提升 (每級 +1)
-    newStats.con += fusionCount;
-    newStats.pwr += fusionCount;
-    newStats.spd += fusionCount;
-    newStats.def += fusionCount;
-    newStats.stu += fusionCount;
-    newStats.total = Math.floor((newStats.con + newStats.pwr + newStats.spd + newStats.def) / 4);
-
-    const newUnit = createUnit({
-        n: playerName, 
-        p: highestLevelCard.pos, 
-        r: highestLevelCard.rarity,
-        stats: newStats,
-        level: newLevel 
-    });
-
-    // 4. 重建 myRoster (新的強卡 + 剩下的舊卡 + 啦啦隊)
-    // 先移除所有該名稱的舊卡
-    myRoster = myRoster.filter(u => u.name !== playerName);
+    // 更新能力值
+    baseCard.stats.con += fusionCount;
+    baseCard.stats.pwr += fusionCount;
+    baseCard.stats.spd += fusionCount;
+    baseCard.stats.def += fusionCount;
+    baseCard.stats.stu += fusionCount;
+    baseCard.stats.total = Math.floor((baseCard.stats.con + baseCard.stats.pwr + baseCard.stats.spd + baseCard.stats.def) / 4);
     
-    // 重新加入剩下的舊卡 (已被保留在 cardsToRemove 中)
-    cardsToRemove.forEach(p => myRoster.push(p));
-    
-    // 重新加入使用的卡 (已被保留在 keptCards 中)
-    keptCards.forEach(p => myRoster.push(p));
+    // 4. 陣容更新：由於我們是原地升級，在陣容中的引用會自動更新，無需額外操作。
 
-    // 5. 加入新的強化卡
-    myRoster.push(newUnit);
-    
-    // 6. 處理陣容更新：將舊卡在陣容中的位置替換成新的強卡 (如果舊卡還在陣容中)
-    const oldCardIds = keptCards.map(c => c.id);
-    lineup = lineup.map(p => (p && oldCardIds.includes(p.id)) ? newUnit : p);
-    for (let role in rotation) {
-        if (rotation[role] && oldCardIds.includes(rotation[role].id)) {
-            rotation[role] = newUnit;
-        }
-    }
-
-
-    alert(`🎉 合成成功！${playerName} 提升 ${fusionCount} 級，目前等級 Lv.${newLevel}！`);
+    alert(`🎉 合成成功！${playerName} 提升 ${fusionCount} 級，目前等級 Lv.${baseCard.level}！(總評提升至 ${baseCard.stats.total})`);
     renderUI();
 }
-// END 合成邏輯
 
 
 function renderLineupTable() {
@@ -661,7 +660,7 @@ function startGame() {
     if(lineup.includes(null)) { alert("打線不完整"); return; }
     if(!rotation.SP) { alert("無先發投手"); return; }
     
-    let requiredP = ['SP','RP1','RP2','CP'].filter(r => rotation[r] === null);
+    let requiredP = ['RP1','RP2','CP'].filter(r => rotation[r] === null);
     if(requiredP.length > 0) {
         if(!confirm(`牛棚缺少 ${requiredP.join('/')}，可能會讓先發投手過度勞累。確定開始嗎？`)) return; 
     }
@@ -688,7 +687,7 @@ function startGame() {
     setTimeout(playPhase, 1000);
 }
 
-// ================= 4. 核心遊戲邏輯 (新增換投與扣倒) =================
+// ================= 4. 核心遊戲邏輯 (比賽與體力受傷) =================
 
 function checkSubstitution() {
     if (!currentPitcher || currentPitcher.stamina >= 20) return false;
@@ -981,6 +980,13 @@ function endGame() {
     game.active = false;
     let win = game.score.h > game.score.a;
     let rwd = win ? 2000 : 500;
+    
+    // 如果是旅外隊伍，獎勵會更高
+    if(opponent.name === OVERSEAS_ALLSTARS.name) {
+        rwd = win ? 5000 : 1000;
+        log(`🏆 擊敗 <span class='log-hl'>${OVERSEAS_ALLSTARS.name}</span>！額外獎勵！`, "log-hl");
+    }
+    
     money += rwd; updateMoney();
     log(`🏁 比賽結束！ ${win?'獲勝':'落敗'}，獲得 $${rwd}`, "log-hl");
     
@@ -1046,53 +1052,274 @@ function setTab(t) {
         renderUI();
     }
 }
-function genOpponent() {
-    let keys = Object.keys(TEAMS); let t = TEAMS[keys[Math.floor(Math.random()*keys.length)]];
-    document.getElementById('opp-name').innerText = t.name;
-    let spData = t.roster.find(x=>x.p==='P') || {n:"洋投",r:"R"};
-    opponent.pitcher = createUnit(spData);
-    document.getElementById('opp-sp').innerText = `${opponent.pitcher.name} (評:${opponent.pitcher.stats.total})`;
-    opponent.lineup = [];
-    let needs = ["CF","SS","1B","DH","3B","LF","C","RF","2B"];
-    for(let p of needs) { let d = t.roster.find(x=>x.p===p)||{n:`${p}手`,p:p,r:"N"}; opponent.lineup.push(createUnit(d)); }
-    document.getElementById('opp-lineup-list').innerHTML = opponent.lineup.map((p,i)=>`<li>${i+1}.${p.name} (${POS_ZH[p.pos]||p.pos})</li>`).join('');
+
+// Helper: 計算玩家平均總評
+function getPlayerAvgRating() {
+    const activePlayers = [...lineup.filter(p => p), ...Object.values(rotation).filter(p => p)];
+    if (activePlayers.length === 0) return 70; // 初始基準值
+
+    const total = activePlayers.reduce((sum, p) => sum + p.stats.total, 0);
+    return total / activePlayers.length;
 }
 
-function gacha() {
-    if(money < 1000) { alert("沒錢"); return; }
-    money -= 1000; updateMoney();
-    let rnd = Math.random()*100;
-    let unit;
+// Helper: 根據平均評分調整基礎數值
+function adjustBaseStats(avgRating, baseStats) {
+    // 玩家平均評分每增加 10 點，對手基礎數值增加 5 點
+    const ratingDiff = avgRating - 70; // 70 為初始 N 卡的基準
+    const adjustment = Math.floor(ratingDiff / 10) * 5; 
+    
+    const newBase = baseStats + adjustment;
+    // 設定最低和最高上限，避免數值失衡
+    return Math.max(65, Math.min(105, newBase)); 
+}
 
-    if(rnd < 20) {
-        let c = CHEER_DB[Math.floor(Math.random()*CHEER_DB.length)]; unit = createUnit(c, 'cheer');
+// 新的對手生成邏輯
+function genOpponent() {
+    // 1. 決定對手類型：5% 機率遇到旅外怪物隊
+    let oppData;
+    let avgRating = getPlayerAvgRating();
+
+    if (Math.random() < 0.05) { 
+        // 旅外怪物隊：使用固定名單，但數值強度仍需調整
+        oppData = OVERSEAS_ALLSTARS;
+        log("📢 遭遇 <span class='log-hl'>【台灣旅外怪物隊】</span>！這將是一場硬戰！", "log-hl");
     } else {
-        let r = "N"; if(rnd < 25) r = "SSR"; else if(rnd < 40) r = "SR"; else if(rnd < 60) r = "R";
+        // CPBL 一般隊伍
+        let keys = Object.keys(TEAMS); 
+        let teamKey = keys[Math.floor(Math.random()*keys.length)];
+        oppData = TEAMS[teamKey];
+    }
+    
+    document.getElementById('opp-name').innerText = oppData.name;
+    
+    opponent.lineup = [];
+    const needs = ["SP","1B","DH","3B","CF","SS","RF","2B","LF","C"]; // 需要 10 位 (SP + 9野手)
+    
+    // 2. 根據玩家平均評分決定對手的基礎數值
+    let baseRating = avgRating - 5 + (Math.random() * 10); // 讓對手比玩家弱一點或強一點
+    let oppBase = Math.floor(Math.max(70, Math.min(100, baseRating)));
+    
+    // 旅外隊伍的球員數值應更高且固定
+    if (oppData.name === OVERSEAS_ALLSTARS.name) {
+        oppBase = Math.max(90, oppBase); // 怪物隊最低評分 90
+    }
+
+    // 3. 生成/調整對手球員
+    const oppBatters = [];
+    const usedNames = new Set();
+    const posPriorities = ["CF","SS","1B","DH","3B","LF","C","RF","2B"];
+    
+    for (const pos of posPriorities) {
+        let playerTemplate = oppData.roster.find(x => x.p === pos);
+
+        if (!playerTemplate || usedNames.has(playerTemplate.n)) {
+            // 如果找不到特定位置的球員或球員重複，則生成一個假球員
+            playerTemplate = {n: `${oppData.name} ${pos}手`, p: pos, r: 'R'};
+        }
+        usedNames.add(playerTemplate.n);
+
+        // 生成球員物件
+        let player = createUnit(playerTemplate);
+        
+        // 調整數值
+        player.stats = generateDynamicStats(oppBase, player.pos);
+        
+        oppBatters.push(player);
+        if (oppBatters.length >= 9) break; 
+    }
+    
+    opponent.lineup = oppBatters;
+
+    // 3.2. 決定投手
+    let spTemplate = oppData.roster.find(x=>x.p==='P') || {n:"洋投",r:"R"};
+    opponent.pitcher = createUnit(spTemplate);
+    opponent.pitcher.stats = generateDynamicStats(oppBase, opponent.pitcher.pos);
+    
+    document.getElementById('opp-sp').innerText = `${opponent.pitcher.name} (評:${opponent.pitcher.stats.total})`;
+    document.getElementById('opp-lineup-list').innerHTML = opponent.lineup.map((p,i)=>`<li>${i+1}.${p.name} (${POS_ZH[p.pos]||p.pos}) (評:${p.stats.total})</li>`).join('');
+}
+
+
+// 輔助函數：根據目標總評生成數值
+function generateDynamicStats(targetAvg, pos) {
+    const rand = () => Math.floor(Math.random() * 8) - 4; // 隨機正負 4
+    
+    let stats = { con: 0, pwr: 0, spd: 0, def: 0, stu: 0, total: 0 };
+    let totalStats = 0;
+    
+    // 基礎數值從 70 開始，加上動態調整值
+    let baseValue = adjustBaseStats(targetAvg, 70); 
+
+    // 根據位置分配權重 (確保數值符合位置特性)
+    if (pos === 'P') {
+        stats.stu = baseValue + rand() + 5; // 投手更注重 Stuff
+        stats.con = baseValue + rand() - 5;
+        stats.pwr = baseValue + rand() - 5;
+        stats.spd = baseValue + rand();
+        stats.def = baseValue + rand();
+    } else if (['SS', 'CF'].includes(pos)) {
+        stats.def = baseValue + rand() + 5; // 中線更注重防守
+        stats.spd = baseValue + rand() + 5;
+        stats.con = baseValue + rand();
+        stats.pwr = baseValue + rand() - 5;
+        stats.stu = baseValue + rand() - 5;
+    } else { // 打者/內野手
+        stats.con = baseValue + rand() + 5;
+        stats.pwr = baseValue + rand();
+        stats.def = baseValue + rand();
+        stats.spd = baseValue + rand();
+        stats.stu = baseValue + rand() - 5;
+    }
+
+    // 計算總評
+    totalStats = stats.con + stats.pwr + stats.spd + stats.def + stats.stu;
+    
+    // 將所有數值限制在 60-105 之間
+    for(let key in stats) {
+        if (key !== 'total') {
+            stats[key] = Math.max(60, Math.min(105, stats[key]));
+        }
+    }
+    
+    stats.total = Math.floor((stats.con + stats.pwr + stats.spd + stats.def) / 4);
+    
+    // 確保最終總評接近目標 (只針對非投手)
+    if (pos !== 'P') {
+        let diff = targetAvg - stats.total;
+        if (Math.abs(diff) > 5) {
+            let adjustment = diff * 0.2; // 微調
+            stats.con = Math.max(60, Math.min(105, stats.con + adjustment));
+            stats.pwr = Math.max(60, Math.min(105, stats.pwr + adjustment));
+            stats.total = Math.floor((stats.con + stats.pwr + stats.spd + stats.def) / 4);
+        }
+    }
+
+    return stats;
+}
+
+// ================= 5. 招募系統更新 (單抽/十連抽) =================
+
+// 核心抽卡函數：生成一張卡片
+function drawSingle() {
+    let rnd = Math.random()*100;
+    let data;
+    let type = 'player';
+    let r = "N";
+
+    // 20% 機率是啦啦隊
+    if(rnd < 20) {
+        let c = CHEER_DB[Math.floor(Math.random()*CHEER_DB.length)]; 
+        data = c; 
+        type = 'cheer';
+        r = c.r;
+    } else {
+        // 球員稀有度機率
+        if(rnd < 25) r = "SSR"; else if(rnd < 40) r = "SR"; else if(rnd < 60) r = "R";
+        
         let pool = []; 
+        
+        // 將旅外怪物隊伍和歷史名將加入 SSR/SR 卡池，增加稀有度卡的廣度
+        const highRarityPool = [...HISTORY, ...OVERSEAS_ALLSTARS.roster.filter(p => !p.fixed)];
+        
         if(r==="SSR" || r==="SR") {
-             pool = HISTORY.filter(x=>x.r===r);
+             pool = highRarityPool.filter(x=>x.r===r);
              if(pool.length === 0) pool = TEAMS.brothers.roster.filter(x=>x.r===r);
         }
         if(pool.length===0) pool = TEAMS.brothers.roster.filter(x=>x.r==='R');
-        if(pool.length===0) pool = [{n:"潛力新秀",p:'P',r:'N'}, {n:"潛力新秀",p:'IF',r:'N'}];
+        if(pool.length===0) pool = [{n:"潛力新秀",p:'P',r:'N'}, {n:"潛力新秀",p:'IF',r:'N'}]; // 確保有N卡池
 
-        let data = pool[Math.floor(Math.random()*pool.length)];
-        data.y = 1990 + Math.floor(Math.random()*35); unit = createUnit(data);
-        unit.rarity = r; unit.stats = genStats(r);
+        data = pool[Math.floor(Math.random()*pool.length)];
+        data = {...data, y: 1990 + Math.floor(Math.random()*35)};
     }
     
-    myRoster.push(unit); renderUI();
+    // 強制設定稀有度 (用於保底)
+    const unit = createUnit(data, type);
+    unit.rarity = r; 
+    
+    // 如果是球員，重新生成符合稀有度的屬性
+    if (unit.type === 'player') {
+        unit.stats = genStats(r);
+    }
 
-    let box = document.getElementById('gacha-result');
-    let cls = unit.type==='cheer' ? "Girl" : unit.rarity;
-    let levelTxt = unit.level > 0 ? `+${unit.level}` : '';
-    box.innerHTML = `<div class="card-anim ${cls}">
-            <div style="font-weight:bold; color:var(--gold);">${unit.rarity}</div>
-            <h3 style="margin:5px 0;">${unit.name} ${levelTxt}</h3>
-            <div style="color:#aaa;">${unit.type==='cheer'?'📣 啦啦隊':POS_ZH[unit.pos]}</div>
-            <div style="font-size:0.8rem; margin-top:5px;">${unit.type==='cheer'?'效果: '+unit.buff:'總評: '+unit.stats.total}</div>
-        </div>`;
+    return unit;
 }
+
+// 單抽
+function gacha() {
+    if(money < 1000) { alert("資金不足！單抽需要 $1,000"); return; }
+    money -= 1000; updateMoney();
+
+    const unit = drawSingle();
+    myRoster.push(unit);
+    renderUI();
+
+    renderGachaResult([unit]);
+}
+
+// 十連抽
+function gachaTen() {
+    if(money < 10000) { alert("資金不足！十連抽需要 $10,000"); return; }
+    money -= 10000; updateMoney();
+
+    const results = [];
+    let hasSSR = false;
+    let lowestRarityIndex = -1;
+    let lowestRarityValue = 99; // 使用 RARITY_ORDER 的值
+
+    for (let i = 0; i < 10; i++) {
+        let unit = drawSingle();
+        results.push(unit);
+        myRoster.push(unit);
+        
+        if (unit.rarity === 'SSR') {
+            hasSSR = true;
+        }
+
+        const rarityValue = RARITY_ORDER[unit.rarity] || 0;
+        if (unit.type === 'player' && rarityValue < lowestRarityValue) {
+            lowestRarityValue = rarityValue;
+            lowestRarityIndex = i;
+        }
+    }
+
+    // SSR 保底機制
+    if (!hasSSR && lowestRarityIndex !== -1) {
+        let fallbackUnit = results[lowestRarityIndex];
+        
+        // 確保保底的單位是 Player (球員卡)
+        if (fallbackUnit.type === 'player') {
+            fallbackUnit.rarity = 'SSR';
+            fallbackUnit.stats = genStats('SSR'); // 重設為 SSR 數值
+            fallbackUnit.stats.total = Math.floor((fallbackUnit.stats.con+fallbackUnit.stats.pwr+fallbackUnit.stats.spd+fallbackUnit.stats.def)/4);
+            
+            // 由於我們在 results 和 myRoster 中都使用了 reference，
+            // 只需要修改 fallbackUnit 即可同時更新兩處
+            console.log(`[保底] 第 ${lowestRarityIndex + 1} 張卡升級為 SSR: ${fallbackUnit.name}`);
+        }
+    }
+
+    renderUI();
+    renderGachaResult(results);
+}
+
+// 渲染抽卡結果
+function renderGachaResult(results) {
+    const box = document.getElementById('gacha-result');
+    box.innerHTML = results.map(unit => {
+        const cls = unit.type === 'cheer' ? "Cheer" : unit.rarity;
+        const levelTxt = unit.level > 0 ? `+${unit.level}` : '';
+        const nameDisplay = unit.name.length > 4 ? unit.name.substring(0, 4) + '..' : unit.name;
+        
+        return `
+            <div class="gacha-card ${cls}">
+                <div style="font-weight:bold;">${unit.rarity}</div>
+                <div style="margin:2px 0; font-weight: bold; overflow: hidden; white-space: nowrap;">${nameDisplay} ${levelTxt}</div>
+                <div style="font-size:0.7rem;">${unit.type === 'cheer' ? '啦啦隊' : POS_ZH[unit.pos] || unit.pos}</div>
+            </div>
+        `;
+    }).join('');
+}
+
 
 init();
 </script>

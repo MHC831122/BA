@@ -85,7 +85,7 @@
         .gacha-buttons { display: flex; justify-content: center; gap: 15px; margin-bottom: 15px; }
         .btn-gacha { padding: 10px 20px; font-size: 1.1rem; font-weight: bold; border-radius: 6px; cursor: pointer; transition: background 0.3s; }
         .btn-single { background: #03a9f4; color: white; border: none; }
-        .btn-ten { background: var(--gold); color: #000; border: 2px solid #fff; }
+        .btn-ten { background: var(--gold); color: #000; border: 2px solid #fff; } /* 確保文字顏色是黑色 #000 */
 
         .gacha-box { 
             display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; 
@@ -252,6 +252,15 @@ const POS_ZH = {
 };
 
 const RARITY_ORDER = { 'SSR': 4, 'SR': 3, 'R': 2, 'N': 1, 'Cheer': 0 }; // 用於保底時比較稀有度
+
+// 稀有度能力調整上下限 (Multiplier)
+const RARITY_ADJUSTMENTS = {
+    'SSR': { min: 0.97, max: 1.03 }, // -3% ~ +3%
+    'SR':  { min: 0.95, max: 1.01 }, // -5% ~ +1%
+    'R':   { min: 0.92, max: 1.00 }, // -8% ~ +0%
+    'N':   { min: 0.85, max: 1.00 }, // -15% ~ +0%
+    'Cheer': { min: 1.0, max: 1.0 }
+};
 
 const CHEER_DB = [
     {n:"林襄",t:"Dragons",r:"SSR",buff:"打擊"}, {n:"李多慧",t:"Dragons",r:"SSR",buff:"速度"},
@@ -543,22 +552,30 @@ function fusePlayer(playerName, fusionCount) {
     renderUI();
 }
 
-
 function renderLineupTable() {
     const tb = document.querySelector('#lineup-table tbody');
     tb.innerHTML = "";
+    
+    // 取得所有正在使用的球員ID (陣容+輪值)
+    const allUsedIds = [...lineup.filter(x => x).map(x => x.id), ...Object.values(rotation).filter(x => x).map(x => x.id)];
+
     for(let i=0; i<9; i++) {
         let curr = lineup[i];
         let opts = `<option value="-1">-- 空缺 --</option>`;
         let list = myRoster.filter(p => p.type==='player' && p.pos!=='P');
+        
         list.forEach(p => {
-            let isUsed = lineup.some(x=>x&&x.id===p.id);
-            if(isUsed && (!curr || curr.id!==p.id)) return;
+            let isUsed = allUsedIds.includes(p.id);
+            
+            // 如果球員已被使用，且不是當前選中的球員，則跳過
+            if(isUsed && (!curr || curr.id!==p.id)) return; 
+            
             let disabled = p.injury > 0 ? 'disabled' : '';
             let injTxt = p.injury > 0 ? ` (傷${p.injury}場)` : '';
             let pos_zh = POS_ZH[p.pos] || p.pos;
             let levelTxt = p.level > 0 ? `+${p.level}` : '';
             let sel = (curr&&curr.id===p.id)?'selected':'';
+            
             opts += `<option value="${p.id}" ${sel} ${disabled}>
                 ${p.name} ${levelTxt} (${pos_zh}) - 評:${p.stats.total} 體:${p.stamina.toFixed(0)}${injTxt}
             </option>`;
@@ -570,17 +587,26 @@ function renderLineupTable() {
 function renderRotationTable() {
     const tb = document.querySelector('#rotation-table tbody');
     tb.innerHTML = "";
+
+    // 取得所有正在使用的球員ID (陣容+輪值)
+    const allUsedIds = [...lineup.filter(x => x).map(x => x.id), ...Object.values(rotation).filter(x => x).map(x => x.id)];
+
     ['SP','RP1','RP2','CP'].forEach(role => {
         let curr = rotation[role];
         let opts = `<option value="-1">-- 空缺 --</option>`;
         let list = myRoster.filter(p => p.type==='player' && p.pos==='P');
+        
         list.forEach(p => {
-            let isUsed = Object.values(rotation).some(x=>x&&x.id===p.id);
+            let isUsed = allUsedIds.includes(p.id);
+
+            // 如果球員已被使用，且不是當前選中的球員，則跳過
             if(isUsed && (!curr || curr.id!==p.id)) return;
+            
             let disabled = p.injury > 0 ? 'disabled' : '';
             let injTxt = p.injury > 0 ? ` (傷${p.injury}場)` : '';
             let levelTxt = p.level > 0 ? `+${p.level}` : '';
             let sel = (curr&&curr.id===p.id)?'selected':'';
+            
             opts += `<option value="${p.id}" ${sel} ${disabled}>
                 ${p.name} ${levelTxt} - 威:${p.stats.stu} 體:${p.stamina.toFixed(0)}${injTxt}
             </option>`;
@@ -644,10 +670,26 @@ function setRot(r, id) { rotation[r] = id==="-1"?null:myRoster.find(u=>u.id===id
 function setCheer(i, id) { activeCheers[i] = id==="-1"?null:myRoster.find(u=>u.id===id); renderUI(); }
 
 function autoLineup() {
-    let bat = myRoster.filter(u=>u.type==='player' && u.pos!=='P' && u.injury===0).sort((a,b)=>b.stats.total-a.stats.total);
-    for(let i=0; i<9; i++) lineup[i] = bat[i] || null;
+    // 找出所有未受傷且未在輪值中的球員
+    const rotationIds = Object.values(rotation).filter(p => p).map(p => p.id);
+    let availablePlayers = myRoster.filter(u => 
+        u.type === 'player' && 
+        u.pos !== 'P' && 
+        u.injury === 0 &&
+        !rotationIds.includes(u.id) // 確保不在輪值中
+    ).sort((a,b)=>b.stats.total-a.stats.total);
     
-    let availablePitchers = myRoster.filter(p => p.type === 'player' && p.pos === 'P' && p.injury === 0).sort((a,b)=>b.stats.total-a.stats.total);
+    for(let i=0; i<9; i++) lineup[i] = availablePlayers[i] || null;
+    
+    // 找出所有未受傷且未在打線中的投手
+    const lineupIds = lineup.filter(p => p).map(p => p.id);
+    let availablePitchers = myRoster.filter(p => 
+        p.type === 'player' && 
+        p.pos === 'P' && 
+        p.injury === 0 &&
+        !lineupIds.includes(p.id) // 確保不在打線中 (雖然不該發生)
+    ).sort((a,b)=>b.stats.total-a.stats.total);
+
     rotation.SP = availablePitchers[0] || null;
     rotation.RP1 = availablePitchers[1] || null;
     rotation.RP2 = availablePitchers[2] || null;
@@ -689,13 +731,28 @@ function startGame() {
 
 // ================= 4. 核心遊戲邏輯 (比賽與體力受傷) =================
 
+// NEW HELPER: 根據稀有度進行能力動態調整
+function getAdjustedStatValue(statValue, rarity) {
+    const bounds = RARITY_ADJUSTMENTS;
+    
+    // 確保稀有度在定義中
+    const { min, max } = bounds[rarity] || { min: 1.0, max: 1.0 };
+    
+    // 生成一個在 [min, max] 之間的隨機乘數
+    const multiplier = min + Math.random() * (max - min); 
+    
+    return Math.round(statValue * multiplier);
+}
+
+
 function checkSubstitution() {
     if (!currentPitcher || currentPitcher.stamina >= 20) return false;
 
     const roles = ['RP1', 'RP2', 'CP'];
     for (const role of roles) {
         let reliever = rotation[role];
-        if (reliever && reliever.stamina > 40 && reliever.injury === 0) {
+        // 增加檢查：該救援投手是否已經在場上 (雖然邏輯上不該發生，但更安全)
+        if (reliever && reliever.stamina > 40 && reliever.injury === 0 && reliever.id !== currentPitcher.id) {
             const oldPName = currentPitcher.name;
             currentPitcher = reliever;
             rotation.SP = reliever;
@@ -718,7 +775,6 @@ function simulateAtBat() {
     const B = game.top ? opponent.lineup[game.batIdx.a % 9] : lineup[game.batIdx.h % 9];
     
     if (!B) {
-        // 如果打線有空缺，強制出局並結束當前半局
         log(`🚨 警告！打線中第 ${game.top ? game.batIdx.a % 9 + 1 : game.batIdx.h % 9 + 1} 棒空缺，判出局。`, "log-error");
         addOut();
         return; 
@@ -740,8 +796,15 @@ function simulateAtBat() {
     let outcome = null;
 
     while (!outcome) {
+        // --- NEW: 獲取動態調整後的能力值 ---
+        const B_con = getAdjustedStatValue(B.stats.con, B.rarity);
+        const P_stu = getAdjustedStatValue(P.stats.stu, P.rarity);
+        // ------------------------------------
+
         const fatiguePenalty = P.stamina < 20 ? (20 - P.stamina) * 0.5 : 0;
-        let pitchDiff = (B.stats.con + bonus) - P.stats.stu - fatiguePenalty + (Math.random()*40 - 20); 
+        
+        // 使用調整後的能力值進行對決
+        let pitchDiff = (B_con + bonus) - P_stu - fatiguePenalty + (Math.random()*40 - 20); 
 
         if (P.type === 'player' && isHomeDef) {
             P.stamina = Math.max(0, P.stamina - 0.2);
@@ -750,7 +813,12 @@ function simulateAtBat() {
 
         if (pitchDiff > 10) {
             // 優秀擊球 (Contact for hit/HR)
-            let hitPowerDiff = (B.stats.pwr + bonus) - P.stats.total + (Math.random()*30 - 15);
+            // --- NEW: 獲取動態調整後的Power值 ---
+            const B_pwr = getAdjustedStatValue(B.stats.pwr, B.rarity);
+            // ------------------------------------
+            
+            let hitPowerDiff = (B_pwr + bonus) - P.stats.total + (Math.random()*30 - 15);
+            
             if (hitPowerDiff > 20) {
                 outcome = 'HR';
                 log(`🔥 <span class="${B_color}">${B.name}</span> 炸裂！全壘打！`, "log-hl");

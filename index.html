@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>CPBL 2025 終極經理人：無限應援版 (V2)</title>
+    <title>CPBL 2025 終極經理人：無限應援版 (V3)</title>
     <style>
         :root { 
             --bg: #121212; --card: #1e1e1e; --text: #e0e0e0; --primary: #1565c0; --accent: #ff4081; --gold: #ffd700; 
@@ -16,7 +16,7 @@
         .r-SR { color: #e0e0e0; text-shadow: 0 0 5px rgba(255, 255, 255, 0.4); font-weight: bold; }
         .r-R { color: #42a5f5; font-weight: bold; }
         .r-N { color: #9e9e9e; }
-        .r-Special { color: #ff5252; font-weight: bold; } /* 演唱會嘉賓 */
+        .r-Special { color: #ff5252; text-shadow: 0 0 8px rgba(255, 82, 82, 0.6); font-weight: bold; } /* 演唱會嘉賓 */
         .injured { color: #ff5252; text-decoration: line-through; opacity: 0.7; }
 
         /* 布局 */
@@ -72,12 +72,18 @@
         /* 場地資訊 */
         #weather-info { background: #333; padding: 8px; border-radius: 6px; margin-bottom: 10px; font-size: 0.9rem; }
         .wind { color: #81c784; } .weather { color: #fff176; }
+        
+        /* 陣容按鈕群組 */
+        .lineup-btns { display: flex; gap: 8px; }
+        .lineup-btns button { font-size:0.8rem; padding: 5px 10px; }
+        .btn-clear { background: #e57373; color: white; border: none; }
+        .btn-optimize { background: #4caf50; color: white; border: none; }
 
         /* 招募區塊 */
         .gacha-buttons { display: flex; justify-content: center; gap: 15px; margin-bottom: 15px; }
         .btn-gacha { padding: 10px 20px; font-size: 1.1rem; font-weight: bold; border-radius: 6px; cursor: pointer; transition: background 0.3s; }
         .btn-single { background: #03a9f4; color: white; border: none; }
-        .btn-ten { background: var(--gold); color: #000; border: 2px solid #fff; } /* 確保文字顏色是黑色 #000 */
+        .btn-ten { background: var(--gold); color: #000; border: 2px solid #fff; } 
 
         .gacha-box { 
             display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; 
@@ -99,14 +105,14 @@
 <body>
 
 <div id="screen-select" class="screen active">
-    <h1 style="color: white; margin-top: 50px;">CPBL 2025 終極經理人 (V2)</h1>
+    <h1 style="color: white; margin-top: 50px;">CPBL 2025 終極經理人 (V3)</h1>
     <p style="color: #aaa;">請選擇球隊 (包含初始球員、資金 $1,000,000 與專屬啦啦隊)</p>
     <div class="team-grid" id="team-list"></div>
 </div>
 
 <div id="screen-main" class="screen">
     <header>
-        <div style="font-weight: bold;">⚾ 無限應援版 (V2)</div>
+        <div style="font-weight: bold;">⚾ 無限應援版 (V3)</div>
         <nav style="height: 100%;">
             <button class="nav-btn active" onclick="setTab('roster')">陣容管理</button>
             <button class="nav-btn" onclick="setTab('game')">比賽轉播</button>
@@ -118,7 +124,13 @@
     <div id="tab-roster" style="margin-top: 15px;">
         <div style="display: grid; grid-template-columns: 1fr 1fr 300px; gap: 15px;">
             <div class="panel">
-                <h3>📋 先發打線 <button onclick="autoLineup()" style="font-size:0.8rem;">一鍵最佳化</button></h3>
+                <h3>
+                    📋 先發打線
+                    <span class="lineup-btns">
+                        <button class="btn-optimize" onclick="autoLineup()">一鍵最佳化</button>
+                        <button class="btn-clear" onclick="clearAllLineup()">一鍵清空所有陣容</button>
+                    </span>
+                </h3>
                 <table id="lineup-table">
                     <thead><tr><th>棒次</th><th>球員選擇 (數值/體力/慣用手)</th></tr></thead>
                     <tbody></tbody>
@@ -339,7 +351,7 @@ const HISTORY = [
     {n:"張泰山",p:"3B",r:"SR"}, {n:"林智勝",p:"SS",r:"SR"}
 ];
 
-// 新增旅外怪物隊伍
+// 旅外怪物隊伍
 const OVERSEAS_ALLSTARS = {
     name: "🇹🇼 旅外怪物隊", logo: "⭐", 
     roster: [
@@ -354,7 +366,8 @@ let money = 1000000;
 let myRoster = []; 
 let lineup = new Array(9).fill(null);
 let rotation = { SP:null, RP1:null, RP2:null, CP:null };
-let activeCheers = [null, null, null]; 
+let activeCheers = [null, null, null]; // 只有 3 個 UI 槽位
+// activeCheers[3] is reserved for Dome event and will be handled during game play, not UI rendering.
 
 let game = { active:false, inning:1, top:true, outs:0, bases:[0,0,0], score:{a:0,h:0}, batIdx:{a:0,h:0}, counts:{s:0, b:0} };
 let opponent = { name:"", lineup:[], pitcher:null };
@@ -413,7 +426,8 @@ function selectTeam(key) {
     myRoster = [];
     lineup = new Array(9).fill(null);
     rotation = { SP:null, RP1:null, RP2:null, CP:null };
-
+    activeCheers = [null, null, null];
+    
     // 初始核心球員
     t.roster.forEach(p => myRoster.push(createUnit(p)));
     
@@ -454,12 +468,22 @@ function renderUI() {
     document.getElementById('money-val').innerText = `$${money.toLocaleString()}`;
 }
 
-// Helper: 獲取所有在陣容或輪值中的球員/啦啦隊名稱
+/**
+ * 核心重複檢查：獲取所有在【打線】、【投手輪值】和【應援團】中已使用的球員/啦啦隊名稱。
+ * 這是為了確保同一張卡片（或同名球員）不會在多個位置重複上場。
+ */
 function getUsedNames() {
     const usedNames = new Set();
+    
+    // 檢查打線
     lineup.filter(p => p).forEach(p => usedNames.add(p.name));
+    
+    // 檢查投手輪值
     Object.values(rotation).filter(p => p).forEach(p => usedNames.add(p.name));
-    activeCheers.filter(c => c).forEach(c => usedNames.add(c.name));
+    
+    // 檢查應援團 (只檢查 UI 上的 3 個槽位)
+    activeCheers.slice(0, 3).filter(c => c).forEach(c => usedNames.add(c.name));
+    
     return usedNames;
 }
 
@@ -470,13 +494,15 @@ function renderLineupTable() {
     
     for(let i=0; i<9; i++) {
         let curr = lineup[i];
-        let usedNames = getUsedNames(); // 獲取所有已用名稱
+        let usedNames = getUsedNames(); 
         let opts = `<option value="-1">-- 空缺 --</option>`;
         let list = myRoster.filter(p => p.type==='player' && p.pos!=='P');
         
         list.forEach(p => {
+            // 檢查：如果該名稱已在其他陣容/輪值/應援團使用，則禁用該選項
             let isUsedElsewhere = usedNames.has(p.name) && (!curr || curr.name!==p.name);
             
+            // 只有當該球員是當前位置的球員，或該名稱未被使用，才能在選單中顯示
             if(isUsedElsewhere) return; 
             
             let disabled = p.injury > 0 ? 'disabled' : '';
@@ -500,11 +526,12 @@ function renderRotationTable() {
 
     ['SP','RP1','RP2','CP'].forEach(role => {
         let curr = rotation[role];
-        let usedNames = getUsedNames(); // 獲取所有已用名稱
+        let usedNames = getUsedNames(); 
         let opts = `<option value="-1">-- 空缺 --</option>`;
         let list = myRoster.filter(p => p.type==='player' && p.pos==='P');
         
         list.forEach(p => {
+            // 檢查：如果該名稱已在其他陣容/輪值/應援團使用，則禁用該選項
             let isUsedElsewhere = usedNames.has(p.name) && (!curr || curr.name!==p.name);
 
             if(isUsedElsewhere) return;
@@ -528,10 +555,11 @@ function renderCheerSlots() {
     div.innerHTML = "";
     for(let i=0; i<3; i++) {
         let curr = activeCheers[i];
-        let usedNames = getUsedNames(); // 獲取所有已用名稱 (包含球員/投手)
+        let usedNames = getUsedNames(); 
         let opts = `<option value="-1">-- 無 --</option>`;
         let list = myRoster.filter(u => u.type==='cheer');
         list.forEach(c => {
+            // 檢查：如果該名稱已在其他陣容/輪值/應援團使用，則禁用該選項
             let isUsedElsewhere = usedNames.has(c.name) && (!curr || curr.name!==c.name);
             if(isUsedElsewhere) return;
             let sel = (curr&&curr.id===c.id)?'selected':'';
@@ -541,7 +569,26 @@ function renderCheerSlots() {
     }
 }
 
-// 由於啦啦隊清單和球員清單的渲染邏輯與重複檢查無關，沿用舊版。
+// 實作一鍵清空所有陣容
+function clearAllLineup() {
+    if (!confirm("確定要清空所有先發打線、投手輪值和應援團的配置嗎？")) return;
+    
+    lineup = new Array(9).fill(null);
+    rotation = { SP:null, RP1:null, RP2:null, CP:null };
+    activeCheers = [null, null, null];
+    
+    // 確保不會影響到大巨蛋的臨時 Buff 槽位 (索引 3)
+    if (activeCheers.length > 3) {
+        activeCheers[3] = null;
+    }
+    
+    renderUI();
+    alert("所有陣容配置已清空！");
+}
+
+
+// --- 以下為其他輔助函數，沿用上一版本 ---
+
 function renderCheerList() { /* ... (Same as before) ... */
     const v = document.getElementById('cheer-roster-view');
     let cheerleaders = myRoster.filter(u => u.type === 'cheer');
@@ -689,6 +736,7 @@ function fusePlayer(playerName, fusionCount) { /* ... (Same as before) ... */
     renderUI();
 }
 
+// 綁定選單事件，並重新渲染 UI 以更新重複檢查
 function setLineup(i, id) { lineup[i] = id==="-1"?null:myRoster.find(u=>u.id===id); renderUI(); }
 function setRot(r, id) { rotation[r] = id==="-1"?null:myRoster.find(u=>u.id===id); renderUI(); }
 function setCheer(i, id) { activeCheers[i] = id==="-1"?null:myRoster.find(u=>u.id===id); renderUI(); }
@@ -701,28 +749,53 @@ function autoLineup() {
         u.type === 'player' && 
         u.pos !== 'P' && 
         u.injury === 0 &&
-        !usedNames.has(u.name)
+        !usedNames.has(u.name) // 排除已使用的名稱
     ).sort((a,b)=>b.stats.total-a.stats.total);
     
-    for(let i=0; i<9; i++) lineup[i] = availablePlayers[i] || null;
+    // 先清空，再重新填充，以確保自動排版時不會用到自己
+    lineup = new Array(9).fill(null);
+    rotation = { SP:null, RP1:null, RP2:null, CP:null };
+    activeCheers = [null, null, null];
+    
+    // 重新取得已用名稱（此時應該只有啦啦隊/未移除的）
+    let currentUsedNames = getUsedNames();
+
+    // 填充打線
+    for(let i=0; i<9; i++) {
+        let bestPlayer = availablePlayers.find(p => !currentUsedNames.has(p.name));
+        if (bestPlayer) {
+            lineup[i] = bestPlayer;
+            currentUsedNames.add(bestPlayer.name);
+        } else {
+            lineup[i] = null;
+        }
+    }
     
     let availablePitchers = myRoster.filter(p => 
         p.type === 'player' && 
         p.pos === 'P' && 
         p.injury === 0 &&
-        !usedNames.has(p.name)
+        !currentUsedNames.has(p.name)
     ).sort((a,b)=>b.stats.total-a.stats.total);
 
-    rotation.SP = availablePitchers[0] || null;
-    rotation.RP1 = availablePitchers[1] || null;
-    rotation.RP2 = availablePitchers[2] || null;
-    rotation.CP = availablePitchers[3] || null;
+    // 填充投手
+    let pitcherSlots = ['SP', 'RP1', 'RP2', 'CP'];
+    pitcherSlots.forEach(role => {
+        let bestPitcher = availablePitchers.find(p => !currentUsedNames.has(p.name));
+        if (bestPitcher) {
+            rotation[role] = bestPitcher;
+            currentUsedNames.add(bestPitcher.name);
+        } else {
+            rotation[role] = null;
+        }
+    });
 
-    // 嘗試將未被使用的啦啦隊放入應援團
-    let availableCheers = myRoster.filter(u => u.type === 'cheer' && !getUsedNames().has(u.name));
+    // 填充啦啦隊
+    let availableCheers = myRoster.filter(u => u.type === 'cheer' && !currentUsedNames.has(u.name));
     for (let i = 0; i < 3; i++) {
-        if (!activeCheers[i] && availableCheers.length > 0) {
+        if (availableCheers.length > 0) {
             activeCheers[i] = availableCheers.shift();
+            currentUsedNames.add(activeCheers[i].name);
         }
     }
 
@@ -755,7 +828,13 @@ function startGame() {
     currentPitcher = rotation.SP;
     updateBoard();
     
-    let buffs = activeCheers.filter(c=>c).map(c=>c.buff);
+    let buffs = activeCheers.slice(0, 3).filter(c=>c).map(c=>c.buff); // 只看前三個 UI 槽位
+    
+    // 加上大巨蛋臨時 Buff
+    if (activeCheers.length > 3 && activeCheers[3] && activeCheers[3].buff) {
+         buffs.push(activeCheers[3].buff);
+    }
+
     document.getElementById('active-cheer').innerText = buffs.length ? buffs.join('、') : "無";
     document.getElementById('bullpen-display').innerText = ['RP1','RP2','CP'].map(r=> rotation[r] ? `${rotation[r].name} (體:${rotation[r].stamina.toFixed(0)})` : "-").join(' / ');
 
@@ -776,13 +855,16 @@ function initWeatherAndField() {
         | ☀️ 天氣: <span class="weather">${gameWeather.weather}</span> 
         | 💨 風向: <span class="wind">${gameWeather.wind}</span>
     `;
+    
+    // 清除可能存在的臨時啦啦隊槽位 (索引 3)
+    activeCheers[3] = null; 
 
     // 大巨蛋特殊處理
     if (gameWeather.effect === "Dome") {
         const singerName = gameWeather.singers[Math.floor(Math.random() * gameWeather.singers.length)];
         const domeCheer = createUnit({ n: singerName, r: "Special", buff: "演唱會" }, 'cheer');
         
-        // 臨時增加一個啦啦隊Buff
+        // 臨時增加一個啦啦隊Buff (索引 3)
         activeCheers[3] = domeCheer; 
         
         infoHTML += `<br>🎉 <strong>大巨蛋額外 Buff：</strong> 歌手 <span class="r-Special">${singerName}</span> 應援中！`;
@@ -1144,12 +1226,17 @@ function endGame() { /* ... (Same as before) ... */
     money += rwd; updateMoney();
     log(`🏁 比賽結束！ ${win?'獲勝':'落敗'}，獲得 $${rwd}`, "log-hl");
     
-    let healBuff = activeCheers.some(c=>c&&c.buff==="全能"||c&&c.buff==="體力"||c&&c.buff==="演唱會"); // 增加演唱會Buff
+    // 檢查是否有大巨蛋臨時Buff (索引 3)
+    let healBuff = activeCheers.filter(c=>c).some(c=>c.buff==="全能"||c.buff==="體力"||c.buff==="演唱會"); 
+    
     myRoster.forEach(u => {
         if(u.type === 'cheer') return;
         
-        const usedNames = getUsedNames(); 
-        const played = usedNames.has(u.name);
+        // 取得所有已用名稱，包括大巨蛋臨時啦啦隊
+        const currentUsedNames = getUsedNames();
+        if (activeCheers[3]) currentUsedNames.add(activeCheers[3].name);
+
+        const played = currentUsedNames.has(u.name);
         
         if(played) {
             let drain = u.pos==='P' ? 20 : 5;
@@ -1169,6 +1256,8 @@ function endGame() { /* ... (Same as before) ... */
                     // 受傷後從陣容/輪值中移除 (按名稱移除)
                     lineup = lineup.map(p => p && p.name === u.name ? null : p);
                     for(let r in rotation) { if(rotation[r] && rotation[r].name === u.name) rotation[r] = null; }
+                    // 清除應援團
+                    activeCheers = activeCheers.map(c => c && c.name === u.name ? null : c);
                 }
             }
         } else {
@@ -1185,7 +1274,7 @@ function endGame() { /* ... (Same as before) ... */
     });
 
     // 清除大巨蛋臨時啦啦隊
-    if(gameWeather.effect === "Dome") activeCheers[3] = null;
+    activeCheers[3] = null; 
 
     document.getElementById('btn-start').disabled = false;
     document.getElementById('btn-start').innerText = "📡 下一場比賽";

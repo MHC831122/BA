@@ -67,6 +67,19 @@
         /* 壘包動態 */
         .base { transition: background 0.2s, box-shadow 0.2s; }
         .base.active { background: #ff4081 !important; border-color: #f06292 !important; box-shadow: 0 0 10px #ff4081; }
+
+        /* 合成中心 */
+        #fusion-center .fusion-item { 
+            background: #222; border: 1px solid #444; padding: 8px; border-radius: 6px; 
+            display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;
+        }
+        .fusion-item .btn-fuse { 
+            background: var(--accent); color: white; border: none; padding: 5px 10px; 
+            border-radius: 4px; cursor: pointer; font-size: 0.85rem; 
+            transition: background 0.2s;
+        }
+        .fusion-item .btn-fuse:hover { background: #d81b60; }
+        .fusion-item .btn-fuse:disabled { background: #555; cursor: default; }
     </style>
 </head>
 <body>
@@ -121,6 +134,14 @@
                 <div id="roster-view" style="display: flex; flex-wrap: wrap; gap: 8px; max-height: 160px; overflow-y: auto;"></div>
             </div>
         </div>
+        
+        <div class="panel" style="margin-top: 15px;">
+            <h3>🔮 合成進化中心 (10 張卡片合成 +1 點能力)</h3>
+            <div id="fusion-center">
+                <p style="color:#aaa; font-style:italic;">目前沒有足夠的重複球員可以合成。</p>
+            </div>
+        </div>
+
     </div>
 
     <div id="tab-game" style="display: none; margin-top: 15px;">
@@ -243,7 +264,7 @@ const HISTORY = [
 ];
 
 // ================= 2. 系統狀態 =================
-let money = 1000000; // <--- 已從 10000 更改為 1000000
+let money = 1000000; 
 let myRoster = []; 
 let lineup = new Array(9).fill(null);
 let rotation = { SP:null, RP1:null, RP2:null, CP:null };
@@ -264,9 +285,19 @@ function genStats(r) {
 function createUnit(data, type='player') {
     let u = {
         id: Math.random().toString(36).substr(2,9), name: data.n, type: type, rarity: data.r || "N", 
-        pos: data.p || "Cheer", stamina: 100, injury: 0
+        pos: data.p || "Cheer", stamina: 100, injury: 0,
+        // 新增 level 屬性來追蹤合成次數，初始為 0
+        level: data.level || 0
     };
-    if(type==='player') u.stats = genStats(u.rarity);
+    if(type==='player') {
+        u.stats = data.stats ? {...data.stats} : genStats(u.rarity);
+        // 如果是合成卡，根據 level 增加 stats
+        if (u.level > 0) {
+            u.stats.con += u.level; u.stats.pwr += u.level; u.stats.spd += u.level;
+            u.stats.def += u.level; u.stats.stu += u.level;
+            u.stats.total = Math.floor((u.stats.con+u.stats.pwr+u.stats.spd+u.stats.def)/4);
+        }
+    }
     else u.buff = data.buff || "士氣";
     return u;
 }
@@ -337,8 +368,182 @@ function renderUI() {
     renderCheerSlots();
     renderCheerList(); 
     renderRosterList();
+    renderFusionCenter(); // <--- 新增渲染合成中心的函數
     document.getElementById('money-val').innerText = `$${money.toLocaleString()}`;
 }
+
+// Helper: 尋找重複的球員卡
+function getDuplicatePlayers() {
+    const playerRoster = myRoster.filter(u => u.type === 'player');
+    const counts = {};
+    const originals = {}; // 儲存最高等級的版本作為基底
+
+    playerRoster.forEach(p => {
+        const key = p.name; // 用名稱來識別重複
+        counts[key] = (counts[key] || 0) + 1;
+        
+        if (!originals[key] || p.level > originals[key].level) {
+            originals[key] = p; // 找到最高等級的卡作為合成目標的基礎
+        }
+    });
+
+    const duplications = [];
+    for (const name in counts) {
+        if (counts[name] >= 10) { // 至少 10 張才能合成
+            duplications.push({
+                name: name,
+                count: counts[name],
+                baseUnit: originals[name] // 傳遞最高等級的卡片
+            });
+        }
+    }
+    return duplications;
+}
+
+
+// 渲染合成中心
+function renderFusionCenter() {
+    const center = document.getElementById('fusion-center');
+    const duplications = getDuplicatePlayers();
+
+    if (duplications.length === 0) {
+        center.innerHTML = '<p style="color:#aaa; font-style:italic;">目前沒有足夠的重複球員可以合成。</p>';
+        return;
+    }
+
+    center.innerHTML = '';
+    duplications.forEach(d => {
+        const canFuse = d.count >= 10;
+        const fusionCount = Math.floor(d.count / 10);
+        const player = d.baseUnit;
+        const pos_zh = POS_ZH[player.pos] || player.pos;
+
+        center.innerHTML += `
+            <div class="fusion-item">
+                <div style="font-weight:bold;">
+                    <span class="r-${player.rarity}">${player.name}</span> (${pos_zh}) <small>Lv.${player.level}</small>
+                </div>
+                <div style="font-size:0.9rem;">
+                    擁有數量: ${d.count} 張 (${fusionCount} 次合成機會)
+                </div>
+                <button class="btn-fuse" 
+                        ${canFuse ? '' : 'disabled'}
+                        onclick="fusePlayer('${d.name}', ${fusionCount})">
+                    合成 (${fusionCount * 10} 張卡) 
+                </button>
+            </div>
+        `;
+    });
+}
+
+// 執行合成邏輯
+function fusePlayer(playerName, fusionCount) {
+    const playerRoster = myRoster.filter(u => u.type === 'player' && u.name === playerName);
+    const count = playerRoster.length;
+    const requiredCards = fusionCount * 10;
+    
+    if (count < requiredCards) {
+        alert("錯誤：重複卡數量不足！");
+        return;
+    }
+
+    if (!confirm(`確定消耗 ${requiredCards} 張 ${playerName} 的卡片，將其合成並提升 ${fusionCount} 級嗎？`)) {
+        return;
+    }
+
+    // 1. 移除所需數量的卡片 (從低級或普通的卡開始移除)
+    // 為了簡化，我們只移除前 N 張，但會保留陣容中的卡。
+    let cardsToRemove = [];
+    let keptCards = [];
+    
+    // 確保不會移除任何正在陣容中使用的卡
+    const usedIds = [...lineup.filter(p => p).map(p => p.id), ...Object.values(rotation).filter(p => p).map(p => p.id)];
+    
+    // 將所有卡分組：使用的 vs 可移除的
+    playerRoster.forEach(p => {
+        if (usedIds.includes(p.id)) {
+            keptCards.push(p);
+        } else {
+            cardsToRemove.push(p);
+        }
+    });
+
+    // 檢查可移除的卡片是否足夠
+    if (cardsToRemove.length < requiredCards) {
+        alert("錯誤：您將某些卡片放在先發陣容或輪值中，無法移除。請先將卡片移出陣容。");
+        return;
+    }
+
+    // 執行移除
+    cardsToRemove.splice(0, requiredCards);
+    
+    // 2. 找到最高等級的卡片，進行升級
+    let highestLevelCard = [...keptCards, ...cardsToRemove].sort((a, b) => b.level - a.level)[0];
+    
+    if (!highestLevelCard) {
+        // 如果這個球員的所有卡片都被移除了，則找回基礎資料重新創建
+        const baseData = TEAMS[Object.keys(TEAMS).find(k => TEAMS[k].roster.some(r => r.n === playerName))]
+            ?.roster.find(r => r.n === playerName) 
+            || HISTORY.find(h => h.n === playerName);
+        
+        if (!baseData) {
+            alert("錯誤：找不到該球員的基礎數據。");
+            return;
+        }
+
+        // 重新建立一張初始卡作為基礎
+        highestLevelCard = createUnit(baseData);
+    }
+
+
+    // 3. 創建新的強化卡
+    const newStats = {...highestLevelCard.stats};
+    const newLevel = highestLevelCard.level + fusionCount;
+
+    // 將所有數值提升 (每級 +1)
+    newStats.con += fusionCount;
+    newStats.pwr += fusionCount;
+    newStats.spd += fusionCount;
+    newStats.def += fusionCount;
+    newStats.stu += fusionCount;
+    newStats.total = Math.floor((newStats.con + newStats.pwr + newStats.spd + newStats.def) / 4);
+
+    const newUnit = createUnit({
+        n: playerName, 
+        p: highestLevelCard.pos, 
+        r: highestLevelCard.rarity,
+        stats: newStats,
+        level: newLevel 
+    });
+
+    // 4. 重建 myRoster (新的強卡 + 剩下的舊卡 + 啦啦隊)
+    // 先移除所有該名稱的舊卡
+    myRoster = myRoster.filter(u => u.name !== playerName);
+    
+    // 重新加入剩下的舊卡 (已被保留在 cardsToRemove 中)
+    cardsToRemove.forEach(p => myRoster.push(p));
+    
+    // 重新加入使用的卡 (已被保留在 keptCards 中)
+    keptCards.forEach(p => myRoster.push(p));
+
+    // 5. 加入新的強化卡
+    myRoster.push(newUnit);
+    
+    // 6. 處理陣容更新：將舊卡在陣容中的位置替換成新的強卡 (如果舊卡還在陣容中)
+    const oldCardIds = keptCards.map(c => c.id);
+    lineup = lineup.map(p => (p && oldCardIds.includes(p.id)) ? newUnit : p);
+    for (let role in rotation) {
+        if (rotation[role] && oldCardIds.includes(rotation[role].id)) {
+            rotation[role] = newUnit;
+        }
+    }
+
+
+    alert(`🎉 合成成功！${playerName} 提升 ${fusionCount} 級，目前等級 Lv.${newLevel}！`);
+    renderUI();
+}
+// END 合成邏輯
+
 
 function renderLineupTable() {
     const tb = document.querySelector('#lineup-table tbody');
@@ -353,9 +558,10 @@ function renderLineupTable() {
             let disabled = p.injury > 0 ? 'disabled' : '';
             let injTxt = p.injury > 0 ? ` (傷${p.injury}場)` : '';
             let pos_zh = POS_ZH[p.pos] || p.pos;
+            let levelTxt = p.level > 0 ? `+${p.level}` : '';
             let sel = (curr&&curr.id===p.id)?'selected':'';
             opts += `<option value="${p.id}" ${sel} ${disabled}>
-                ${p.name} (${pos_zh}) - 評:${p.stats.total} 體:${p.stamina.toFixed(0)}${injTxt}
+                ${p.name} ${levelTxt} (${pos_zh}) - 評:${p.stats.total} 體:${p.stamina.toFixed(0)}${injTxt}
             </option>`;
         });
         tb.innerHTML += `<tr><td>${i+1}棒</td><td><select onchange="setLineup(${i},this.value)">${opts}</select></td></tr>`;
@@ -374,9 +580,10 @@ function renderRotationTable() {
             if(isUsed && (!curr || curr.id!==p.id)) return;
             let disabled = p.injury > 0 ? 'disabled' : '';
             let injTxt = p.injury > 0 ? ` (傷${p.injury}場)` : '';
+            let levelTxt = p.level > 0 ? `+${p.level}` : '';
             let sel = (curr&&curr.id===p.id)?'selected':'';
             opts += `<option value="${p.id}" ${sel} ${disabled}>
-                ${p.name} - 威:${p.stats.stu} 體:${p.stamina.toFixed(0)}${injTxt}
+                ${p.name} ${levelTxt} - 威:${p.stats.stu} 體:${p.stamina.toFixed(0)}${injTxt}
             </option>`;
         });
         tb.innerHTML += `<tr><td>${role}</td><td><select onchange="setRot('${role}',this.value)">${opts}</select></td></tr>`;
@@ -419,9 +626,11 @@ function renderRosterList() {
         let injClass = u.injury > 0 ? "injured" : "";
         let staColor = u.stamina > 80 ? "#4caf50" : u.stamina > 40 ? "#ff9800" : "#f44336";
         let pos_zh = POS_ZH[u.pos] || u.pos;
+        let levelTxt = u.level > 0 ? `+${u.level}` : '';
+
         return `
             <div style="background:#333; padding:5px; border-radius:4px; font-size:0.8rem; width:120px;">
-                <div class="${injClass}"><span class="r-${u.rarity}">${u.name}</span> <small>(${pos_zh}) ${u.injury>0?'🏥'+u.injury:''}</small></div>
+                <div class="${injClass}"><span class="r-${u.rarity}">${u.name} ${levelTxt}</span> <small>(${pos_zh}) ${u.injury>0?'🏥'+u.injury:''}</small></div>
                 <div style="display:flex; align-items:center; gap:5px;">
                     <small>體:</small>
                     <div class="sta-bar-bg"><div class="sta-bar-fill" style="width:${u.stamina.toFixed(0)}%; background:${staColor}"></div></div>
@@ -508,6 +717,14 @@ function simulateAtBat() {
     game.counts = {s:0, b:0};
     const P = game.top ? currentPitcher : opponent.pitcher;
     const B = game.top ? opponent.lineup[game.batIdx.a % 9] : lineup[game.batIdx.h % 9];
+    
+    if (!B) {
+        // 如果打線有空缺，強制出局並結束當前半局
+        log(`🚨 警告！打線中第 ${game.top ? game.batIdx.a % 9 + 1 : game.batIdx.h % 9 + 1} 棒空缺，判出局。`, "log-error");
+        addOut();
+        return; 
+    }
+    
     const isHomeDef = game.top;
     const myColor = 'my-team-color';
     const oppColor = 'opp-team-color';
@@ -822,7 +1039,12 @@ function setTab(t) {
     ['roster','game','scout'].forEach(x=>document.getElementById(`tab-${x}`).style.display='none');
     document.getElementById(`tab-${t}`).style.display='block';
     document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
-    event.target.classList.add('active');
+    document.querySelector(`.nav-btn[onclick="setTab('${t}')"]`).classList.add('active');
+    
+    // 如果切換到陣容頁面，重新渲染以確保合成中心更新
+    if (t === 'roster') {
+        renderUI();
+    }
 }
 function genOpponent() {
     let keys = Object.keys(TEAMS); let t = TEAMS[keys[Math.floor(Math.random()*keys.length)]];
@@ -863,9 +1085,10 @@ function gacha() {
 
     let box = document.getElementById('gacha-result');
     let cls = unit.type==='cheer' ? "Girl" : unit.rarity;
+    let levelTxt = unit.level > 0 ? `+${unit.level}` : '';
     box.innerHTML = `<div class="card-anim ${cls}">
             <div style="font-weight:bold; color:var(--gold);">${unit.rarity}</div>
-            <h3 style="margin:5px 0;">${unit.name}</h3>
+            <h3 style="margin:5px 0;">${unit.name} ${levelTxt}</h3>
             <div style="color:#aaa;">${unit.type==='cheer'?'📣 啦啦隊':POS_ZH[unit.pos]}</div>
             <div style="font-size:0.8rem; margin-top:5px;">${unit.type==='cheer'?'效果: '+unit.buff:'總評: '+unit.stats.total}</div>
         </div>`;

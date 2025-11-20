@@ -73,7 +73,7 @@
 
 <div id="screen-select" class="screen active">
     <h1 style="color: white; margin-top: 50px;">CPBL 2025 終極經理人</h1>
-    <p style="color: #aaa;">請選擇球隊 (包含初始球員、資金 $10,000 與專屬啦啦隊)</p>
+    <p style="color: #aaa;">請選擇球隊 (包含初始球員、資金 $1,000,000 與專屬啦啦隊)</p>
     <div class="team-grid" id="team-list"></div>
 </div>
 
@@ -85,7 +85,7 @@
             <button class="nav-btn" onclick="setTab('game')">比賽轉播</button>
             <button class="nav-btn" onclick="setTab('scout')">球員招募</button>
         </nav>
-        <div class="money-badge" id="money-val">$10,000</div>
+        <div class="money-badge" id="money-val">$1,000,000</div>
     </header>
 
     <div id="tab-roster" style="margin-top: 15px;">
@@ -243,7 +243,7 @@ const HISTORY = [
 ];
 
 // ================= 2. 系統狀態 =================
-let money = 10000;
+let money = 1000000; // <--- 已從 10000 更改為 1000000
 let myRoster = []; 
 let lineup = new Array(9).fill(null);
 let rotation = { SP:null, RP1:null, RP2:null, CP:null };

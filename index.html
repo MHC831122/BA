@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>CPBL 2025 終極經理人：無限應援版 (V5)</title>
+    <title>CPBL 2025 終極經理人：無限應援版 (V6)</title>
     <style>
         :root { 
             --bg: #121212; --card: #1e1e1e; --text: #e0e0e0; --primary: #1565c0; --accent: #ff4081; --gold: #ffd700; 
@@ -124,14 +124,14 @@
 <body>
 
 <div id="screen-select" class="screen active">
-    <h1 style="color: white; margin-top: 50px;">CPBL 2025 終極經理人 (V5)</h1>
+    <h1 style="color: white; margin-top: 50px;">CPBL 2025 終極經理人 (V6)</h1>
     <p style="color: #aaa;">請選擇球隊 (包含初始球員、資金 $1,000,000 與專屬啦啦隊)</p>
     <div class="team-grid" id="team-list"></div>
 </div>
 
 <div id="screen-main" class="screen">
     <header>
-        <div style="font-weight: bold;">⚾ 無限應援版 (V5)</div>
+        <div style="font-weight: bold;">⚾ 無限應援版 (V6)</div>
         <nav style="height: 100%;">
             <button class="nav-btn active" onclick="setTab('roster')">陣容管理</button>
             <button class="nav-btn" onclick="setTab('game')">比賽轉播</button>
@@ -157,7 +157,7 @@
                 </table>
             </div>
             <div class="panel">
-                <h3>⚾ 投手輪值 </h3>
+                <h3>⚾ 投手輪值 <span style="font-size:0.8rem; color:var(--gold);"> (SSR 限制: 2 張)</span></h3>
                 <table id="rotation-table">
                     <thead><tr><th>角色</th><th>球員選擇 (數值/體力/慣用手)</th></tr></thead>
                     <tbody></tbody>
@@ -496,16 +496,6 @@ function selectTeam(key) {
     renderUI();
 }
 
-function renderUI() {
-    renderLineupTable();
-    renderRotationTable();
-    renderCheerSlots();
-    renderCheerList(); 
-    renderRosterList();
-    renderFusionCenter(); 
-    document.getElementById('money-val').innerText = `$${money.toLocaleString()}`;
-}
-
 /**
  * 核心重複檢查：獲取所有在【打線】、【投手輪值】和【應援團】中已使用的球員/啦啦隊的 ID。
  */
@@ -524,48 +514,70 @@ function getUsedIDs() {
 }
 
 /**
- * 檢查當前陣容中已使用的 SSR 數量
+ * 核心唯一性檢查：獲取所有在【打線】和【投手輪值】中已使用的球員名字。
  */
-function getUsedSSRCount() {
-    let ssrCount = 0;
-    // 檢查打線
-    lineup.filter(p => p && p.rarity === 'SSR').forEach(() => ssrCount++);
-    // 檢查投手輪值
-    Object.values(rotation).filter(p => p && p.rarity === 'SSR').forEach(() => ssrCount++);
-    
-    return ssrCount;
+function getUsedNames() {
+    const usedNames = new Set();
+    lineup.filter(p => p).forEach(p => usedNames.add(p.name));
+    Object.values(rotation).filter(p => p).forEach(p => usedNames.add(p.name));
+    return usedNames;
 }
 
-// 渲染打線表格 (檢查 ID 重複 + SSR 限制)
+
+/**
+ * 檢查當前陣容中已使用的 SSR 數量 (依位置區分)
+ */
+function getUsedSSRCount() {
+    let hitterSSRCount = 0;
+    let pitcherSSRCount = 0;
+    
+    // 檢查打線
+    lineup.filter(p => p && p.rarity === 'SSR').forEach(() => hitterSSRCount++);
+    // 檢查投手輪值
+    Object.values(rotation).filter(p => p && p.rarity === 'SSR').forEach(() => pitcherSSRCount++);
+    
+    return { hitter: hitterSSRCount, pitcher: pitcherSSRCount };
+}
+
+// 渲染打線表格 (檢查 ID 重複 + SSR 限制 + 同名唯一性)
 function renderLineupTable() {
     const tb = document.querySelector('#lineup-table tbody');
     tb.innerHTML = "";
     
     const maxSSR = 2;
-    const currentSSRCount = getUsedSSRCount();
+    const { hitter: currentHitterSSRCount } = getUsedSSRCount();
     
     for(let i=0; i<9; i++) {
         let curr = lineup[i];
         let usedIDs = getUsedIDs(); 
+        let usedNames = getUsedNames();
         let opts = `<option value="-1">-- 空缺 --</option>`;
         let list = myRoster.filter(p => p.type==='player' && p.pos!=='P');
         
+        // 排序：先按等級高到低，再按稀有度，確保最強卡在最前面
+        list.sort((a, b) => {
+            if (b.level !== a.level) return b.level - a.level;
+            return RARITY_ORDER[b.rarity] - RARITY_ORDER[a.rarity];
+        });
+        
         list.forEach(p => {
-            // 檢查 1: 卡片是否已在其他陣容/輪值/應援團使用
+            // 檢查 1: 卡片 ID 是否已在其他陣容/輪值/應援團使用
             let isUsedElsewhere = usedIDs.has(p.id) && (!curr || curr.id!==p.id);
-            // 檢查 2: 是否超過 SSR 限制 (如果該卡是 SSR 且陣容中已有 2 張 SSR，且它不是當前選中的卡)
-            let isSSRRestricted = (p.rarity === 'SSR' && currentSSRCount >= maxSSR && (!curr || curr.id!==p.id));
+            // 檢查 2: 同名球員是否已在陣容/輪值中上場 (不包括當前選中的球員)
+            let isSameNameUsed = usedNames.has(p.name) && (!curr || curr.name!==p.name);
+            // 檢查 3: 是否超過 SSR 限制 (如果該卡是 SSR 且打者 SSR 已有 2 張，且它不是當前選中的卡)
+            let isSSRRestricted = (p.rarity === 'SSR' && currentHitterSSRCount >= maxSSR && (!curr || curr.id!==p.id));
             
-            if(isUsedElsewhere) return; // 已使用則跳過 (因為 ID 唯一)
+            if(isUsedElsewhere || isSameNameUsed) return; // 已使用則跳過 (因為 ID/同名唯一性)
             
             let disabled = (p.injury > 0) ? 'disabled' : isSSRRestricted ? 'disabled' : '';
             let injTxt = p.injury > 0 ? ` (傷${p.injury}場)` : '';
-            let restrictTxt = isSSRRestricted ? ' (SSR已滿)' : '';
+            let restrictTxt = isSSRRestricted ? ' (SSR打者已滿)' : '';
             let pos_zh = POS_ZH[p.pos] || p.pos;
             let total = getFinalPlayerStat(p, 'total');
             let sel = (curr&&curr.id===p.id)?'selected':'';
             
-            opts += `<option value="${p.id}" ${sel} ${disabled}>
+            opts += `<option value="${p.id}" ${sel} ${disabled} class="r-${p.rarity}">
                 ${p.name} Lv.${p.level} (${pos_zh} / ${HAND_ZH[p.hand]}) - 評:${total} 體:${p.stamina.toFixed(0)}${injTxt}${restrictTxt}
             </option>`;
         });
@@ -573,34 +585,42 @@ function renderLineupTable() {
     }
 }
 
-// 渲染投手輪值表格 (檢查 ID 重複 + SSR 限制)
+// 渲染投手輪值表格 (檢查 ID 重複 + SSR 限制 + 同名唯一性)
 function renderRotationTable() {
     const tb = document.querySelector('#rotation-table tbody');
     tb.innerHTML = "";
 
     const maxSSR = 2;
-    const currentSSRCount = getUsedSSRCount();
+    const { pitcher: currentPitcherSSRCount } = getUsedSSRCount();
 
     ['SP','RP1','RP2','CP'].forEach(role => {
         let curr = rotation[role];
         let usedIDs = getUsedIDs(); 
+        let usedNames = getUsedNames();
         let opts = `<option value="-1">-- 空缺 --</option>`;
         let list = myRoster.filter(p => p.type==='player' && p.pos==='P');
         
+        // 排序：先按等級高到低，再按稀有度
+        list.sort((a, b) => {
+            if (b.level !== a.level) return b.level - a.level;
+            return RARITY_ORDER[b.rarity] - RARITY_ORDER[a.rarity];
+        });
+
         list.forEach(p => {
             let isUsedElsewhere = usedIDs.has(p.id) && (!curr || curr.id!==p.id);
-            // 檢查 2: 是否超過 SSR 限制 (如果該卡是 SSR 且陣容中已有 2 張 SSR，且它不是當前選中的卡)
-            let isSSRRestricted = (p.rarity === 'SSR' && currentSSRCount >= maxSSR && (!curr || curr.id!==p.id));
+            let isSameNameUsed = usedNames.has(p.name) && (!curr || curr.name!==p.name);
+            // 檢查 3: 是否超過 SSR 限制 (如果該卡是 SSR 且投手 SSR 已有 2 張，且它不是當前選中的卡)
+            let isSSRRestricted = (p.rarity === 'SSR' && currentPitcherSSRCount >= maxSSR && (!curr || curr.id!==p.id));
 
-            if(isUsedElsewhere) return;
+            if(isUsedElsewhere || isSameNameUsed) return;
             
             let disabled = (p.injury > 0) ? 'disabled' : isSSRRestricted ? 'disabled' : '';
             let injTxt = p.injury > 0 ? ` (傷${p.injury}場)` : '';
-            let restrictTxt = isSSRRestricted ? ' (SSR已滿)' : '';
+            let restrictTxt = isSSRRestricted ? ' (SSR投手已滿)' : '';
             let totalStu = getFinalPlayerStat(p, 'stu');
             let sel = (curr&&curr.id===p.id)?'selected':'';
             
-            opts += `<option value="${p.id}" ${sel} ${disabled}>
+            opts += `<option value="${p.id}" ${sel} ${disabled} class="r-${p.rarity}">
                 ${p.name} Lv.${p.level} (${HAND_ZH[p.hand]}) - 威:${totalStu} 體:${p.stamina.toFixed(0)}${injTxt}${restrictTxt}
             </option>`;
         });
@@ -632,15 +652,34 @@ function renderCheerSlots() {
     }
 }
 
-// 綁定選單事件，並重新渲染 UI 以更新重複檢查和 SSR 限制
+// 綁定選單事件，並重新渲染 UI 以更新重複檢查、SSR 限制和同名唯一性
 function setLineup(i, id) { 
     const newUnit = id==="-1"?null:myRoster.find(u=>u.id===id);
     const oldUnit = lineup[i];
 
+    // 檢查同名唯一性
+    if (newUnit && newUnit.name !== (oldUnit ? oldUnit.name : null)) {
+        const usedNames = getUsedNames();
+        // 臨時移除舊單位的名字，再檢查新單位的名字是否已被使用
+        if (oldUnit) usedNames.delete(oldUnit.name); 
+
+        if (usedNames.has(newUnit.name)) {
+            alert(`同名球員限定：球員 ${newUnit.name} 已經在其他位置或投手輪值上場，不能重複上場。`);
+            // 重置選單到舊選項
+            renderUI(); 
+            return;
+        }
+    }
+    
+    // 檢查 SSR 限制
     if (newUnit && newUnit.rarity === 'SSR') {
-        const currentSSRCount = getUsedSSRCount();
-        if (currentSSRCount >= 2 && (!oldUnit || oldUnit.rarity !== 'SSR')) {
-            alert("SSR 限制：打線和投手輪值總計最多只能有 2 張 SSR 卡片上場。請先移除其他 SSR 卡片。");
+        const { hitter: currentHitterSSRCount } = getUsedSSRCount();
+        const oldIsSSR = oldUnit && oldUnit.rarity === 'SSR';
+        
+        // 如果新選 SSR，且舊的不是 SSR，且已經滿 2 張，則禁止
+        if (!oldIsSSR && currentHitterSSRCount >= 2) {
+            alert("SSR 限制：打線中最多只能有 2 張 SSR 卡片上場。請先移除其他 SSR 打者卡片。");
+            renderUI();
             return;
         }
     }
@@ -652,10 +691,28 @@ function setRot(r, id) {
     const newUnit = id==="-1"?null:myRoster.find(u=>u.id===id);
     const oldUnit = rotation[r];
     
+    // 檢查同名唯一性
+    if (newUnit && newUnit.name !== (oldUnit ? oldUnit.name : null)) {
+        const usedNames = getUsedNames();
+        // 臨時移除舊單位的名字，再檢查新單位的名字是否已被使用
+        if (oldUnit) usedNames.delete(oldUnit.name); 
+
+        if (usedNames.has(newUnit.name)) {
+            alert(`同名球員限定：球員 ${newUnit.name} 已經在打線中上場，不能重複上場。`);
+            renderUI(); 
+            return;
+        }
+    }
+    
+    // 檢查 SSR 限制
     if (newUnit && newUnit.rarity === 'SSR') {
-        const currentSSRCount = getUsedSSRCount();
-        if (currentSSRCount >= 2 && (!oldUnit || oldUnit.rarity !== 'SSR')) {
-            alert("SSR 限制：打線和投手輪值總計最多只能有 2 張 SSR 卡片上場。請先移除其他 SSR 卡片。");
+        const { pitcher: currentPitcherSSRCount } = getUsedSSRCount();
+        const oldIsSSR = oldUnit && oldUnit.rarity === 'SSR';
+        
+        // 如果新選 SSR，且舊的不是 SSR，且已經滿 2 張，則禁止
+        if (!oldIsSSR && currentPitcherSSRCount >= 2) {
+            alert("SSR 限制：投手輪值中最多只能有 2 張 SSR 卡片上場。請先移除其他 SSR 投手卡片。");
+            renderUI();
             return;
         }
     }
@@ -814,12 +871,12 @@ function renderFusionCenter() {
 }
 
 
-// 球員/啦啦隊合成主邏輯 (修正版)
+// 球員/啦啦隊合成主邏輯 (修正版 V5/V6 通用)
 function fuseUnit(unitName, type, fusionCount) {
     const requiredCards = fusionCount * 10;
     const allUnits = myRoster.filter(u => u.name === unitName && u.type === type);
     
-    // 1. 找到基礎卡 (最高等級/最新的那一張)
+    // 1. 找到基礎卡 (最高等級的那一張)
     let baseUnit = allUnits.reduce((a, b) => (a.level > b.level) ? a : b);
 
     // 2. 獲取所有正在陣容中使用的卡片 ID
@@ -829,7 +886,6 @@ function fuseUnit(unitName, type, fusionCount) {
     const removableCards = allUnits.filter(p => p.id !== baseUnit.id && !usedIDs.has(p.id));
     
     if (removableCards.length < requiredCards) {
-        // --- 針對您的問題修正的重點提示 ---
         alert(`🚨 合成失敗！\n\n您需要 ${requiredCards} 張重複卡，但目前只有 ${removableCards.length} 張卡片是【非基礎卡】且【未在陣容/輪值/應援團中使用】。 \n\n請檢查陣容中是否有其他【同名卡片】正在上場。`);
         return;
     }
@@ -877,9 +933,11 @@ function autoLineup() {
     // 取得所有未受傷的球員/啦啦隊
     let allAvailable = myRoster.filter(u => u.injury === 0);
     
-    // 儲存已使用的卡片 ID
+    // 儲存已使用的卡片 ID 和 Name
     let currentUsedIDs = new Set();
-    let ssrCount = 0;
+    let currentUsedNames = new Set();
+    let hitterSSRCount = 0;
+    let pitcherSSRCount = 0;
     const maxSSR = 2;
 
     // 1. 填充打線 (最高總評)
@@ -889,14 +947,16 @@ function autoLineup() {
     for(let i=0; i<9; i++) {
         let bestPlayer = availableHitters.find(p => {
             if (currentUsedIDs.has(p.id)) return false;
-            if (p.rarity === 'SSR' && ssrCount >= maxSSR) return false;
+            if (currentUsedNames.has(p.name)) return false; // 同名檢查
+            if (p.rarity === 'SSR' && hitterSSRCount >= maxSSR) return false;
             return true;
         });
         
         if (bestPlayer) {
             lineup[i] = bestPlayer;
             currentUsedIDs.add(bestPlayer.id);
-            if (bestPlayer.rarity === 'SSR') ssrCount++;
+            currentUsedNames.add(bestPlayer.name);
+            if (bestPlayer.rarity === 'SSR') hitterSSRCount++;
         }
     }
     
@@ -908,14 +968,16 @@ function autoLineup() {
     pitcherSlots.forEach(role => {
         let bestPitcher = availablePitchers.find(p => {
             if (currentUsedIDs.has(p.id)) return false;
-            if (p.rarity === 'SSR' && ssrCount >= maxSSR) return false;
+            if (currentUsedNames.has(p.name)) return false; // 同名檢查
+            if (p.rarity === 'SSR' && pitcherSSRCount >= maxSSR) return false;
             return true;
         });
         
         if (bestPitcher) {
             rotation[role] = bestPitcher;
             currentUsedIDs.add(bestPitcher.id);
-            if (bestPitcher.rarity === 'SSR') ssrCount++;
+            currentUsedNames.add(bestPitcher.name);
+            if (bestPitcher.rarity === 'SSR') pitcherSSRCount++;
         }
     });
 
@@ -932,7 +994,7 @@ function autoLineup() {
     }
 
     renderUI();
-    log(`陣容已一鍵最佳化。上場 SSR 數: ${ssrCount}/${maxSSR}`, "log-hl");
+    log(`陣容已一鍵最佳化。打者 SSR 數: ${hitterSSRCount}/${maxSSR}，投手 SSR 數: ${pitcherSSRCount}/${maxSSR}`, "log-hl");
 }
 
 
@@ -986,8 +1048,19 @@ function getAdjustedStatValue(unit, statKey, handMatchup = 'Neutral', isPitcher=
 }
 
 // ------------------------------------
-// 其他遊戲邏輯 (沿用 V4)
+// 其他遊戲邏輯（沿用 V4/V5）
 // ------------------------------------
+
+function renderUI() {
+    renderLineupTable();
+    renderRotationTable();
+    renderCheerSlots();
+    renderCheerList(); 
+    renderRosterList();
+    renderFusionCenter(); 
+    document.getElementById('money-val').innerText = `$${money.toLocaleString()}`;
+}
+
 
 function startGame() {
     if(lineup.includes(null)) { log("🚨 打線不完整，請補滿 9 棒再開始。", "log-error"); return; }
@@ -1258,7 +1331,8 @@ function handleDefense(batter, isHomeDef, B_color, hitPowerDiff) {
         }
 
         if(Math.random() * 100 < errorChance) {
-            log(`[E] <span class="${B_color}">${batter.name}</span> ${verb}${loc_zh}！ <span class="${D_color}">${fielder.name||'野手'}</span> 處理失誤！`, "log-error");
+            let fielderName = fielder ? fielder.name : "野手";
+            log(`[E] <span class="${B_color}">${batter.name}</span> ${verb}${loc_zh}！ <span class="${D_color}">${fielderName}</span> 處理失誤！`, "log-error");
             isHit = true; 
         } else {
             let fielderName = fielder ? fielder.name : "野手";

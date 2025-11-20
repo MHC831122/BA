@@ -1,0 +1,877 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>CPBL 2025 終極經理人：無限應援版</title>
+    <style>
+        :root { 
+            --bg: #121212; --card: #1e1e1e; --text: #e0e0e0; --primary: #1565c0; --accent: #ff4081; --gold: #ffd700; 
+            --my-team-color: #90caf9; /* 藍色 */
+            --opp-team-color: #ffcc80; /* 橘色 */
+        }
+        body { font-family: "Microsoft JhengHei", sans-serif; background: var(--bg); color: var(--text); margin: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+        
+        /* 稀有度 */
+        .r-SSR { color: var(--gold); text-shadow: 0 0 8px rgba(255, 215, 0, 0.6); font-weight: bold; }
+        .r-SR { color: #e0e0e0; text-shadow: 0 0 5px rgba(255, 255, 255, 0.4); font-weight: bold; }
+        .r-R { color: #42a5f5; font-weight: bold; }
+        .r-N { color: #9e9e9e; }
+        .injured { color: #ff5252; text-decoration: line-through; opacity: 0.7; }
+
+        /* 布局 */
+        .screen { display: none; height: 100%; padding: 15px; box-sizing: border-box; overflow-y: auto; }
+        .screen.active { display: block; }
+        
+        /* 選隊 */
+        #screen-select { text-align: center; background: radial-gradient(circle, #1a237e 0%, #000 90%); }
+        .team-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 20px; max-width: 1000px; margin: 40px auto; }
+        .team-card { background: rgba(255,255,255,0.05); padding: 15px; border-radius: 12px; cursor: pointer; border: 1px solid #444; transition: 0.3s; }
+        .team-card:hover { border-color: var(--gold); transform: translateY(-5px); background: rgba(255,255,255,0.15); }
+        .team-logo { font-size: 3rem; display: block; margin-bottom: 5px; }
+
+        /* Header */
+        header { height: 55px; background: #0d47a1; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; border-bottom: 3px solid var(--gold); box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
+        .nav-btn { background: transparent; border: none; color: #bbb; font-weight: bold; cursor: pointer; padding: 0 15px; height: 100%; font-size: 1rem; }
+        .nav-btn.active { color: #fff; border-bottom: 4px solid #fff; background: rgba(255,255,255,0.1); }
+        .money-badge { background: linear-gradient(45deg, #ffb300, #f57f17); color: #000; padding: 5px 15px; border-radius: 20px; font-weight: bold; }
+
+        /* 面板 */
+        .panel { background: var(--card); border: 1px solid #333; border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+        h3 { margin-top: 0; border-bottom: 1px solid #444; padding-bottom: 5px; color: var(--my-team-color); font-size: 1.1rem; display: flex; justify-content: space-between; align-items: center; }
+        
+        table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        th, td { padding: 6px; text-align: left; border-bottom: 1px solid #333; }
+        select { width: 100%; background: #2c2c2c; color: #fff; border: 1px solid #555; padding: 5px; border-radius: 4px; }
+        option:disabled { color: #ff5252; background: #222; }
+
+        /* 體力條 */
+        .sta-bar-bg { width: 50px; height: 6px; background: #444; display: inline-block; border-radius: 3px; }
+        .sta-bar-fill { height: 100%; border-radius: 3px; }
+
+        /* 啦啦隊清單 */
+        .cheer-item { background: #333; padding: 5px 8px; border-radius: 4px; font-size: 0.8rem; border-left: 3px solid var(--accent); }
+
+        /* 比賽區 */
+        .game-layout { display: grid; grid-template-columns: 260px 1fr 260px; gap: 15px; height: calc(100vh - 120px); }
+        @media(max-width: 900px) { .game-layout { grid-template-columns: 1fr; } }
+        
+        #play-log { height: 220px; overflow-y: auto; background: #111; padding: 10px; font-family: monospace; font-size: 0.9rem; line-height: 1.5; border: 1px solid #444; }
+        .log-hl { color: var(--gold); } .log-out { color: #90a4ae; } .log-score { color: #69f0ae; font-weight: bold; }
+        .log-inj { color: #ff5252; font-weight: bold; background: rgba(255,0,0,0.1); padding: 2px; }
+        .log-error { color: #ffa000; font-weight: bold; }
+
+        /* 隊伍顏色 */
+        .my-team-color { color: var(--my-team-color); }
+        .opp-team-color { color: var(--opp-team-color); }
+
+        /* 壘包動態 */
+        .base { transition: background 0.2s, box-shadow 0.2s; }
+        .base.active { background: #ff4081 !important; border-color: #f06292 !important; box-shadow: 0 0 10px #ff4081; }
+    </style>
+</head>
+<body>
+
+<div id="screen-select" class="screen active">
+    <h1 style="color: white; margin-top: 50px;">CPBL 2025 終極經理人</h1>
+    <p style="color: #aaa;">請選擇球隊 (包含初始球員、資金 $10,000 與專屬啦啦隊)</p>
+    <div class="team-grid" id="team-list"></div>
+</div>
+
+<div id="screen-main" class="screen">
+    <header>
+        <div style="font-weight: bold;">⚾ 無限應援版</div>
+        <nav style="height: 100%;">
+            <button class="nav-btn active" onclick="setTab('roster')">陣容管理</button>
+            <button class="nav-btn" onclick="setTab('game')">比賽轉播</button>
+            <button class="nav-btn" onclick="setTab('scout')">球員招募</button>
+        </nav>
+        <div class="money-badge" id="money-val">$10,000</div>
+    </header>
+
+    <div id="tab-roster" style="margin-top: 15px;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr 300px; gap: 15px;">
+            <div class="panel">
+                <h3>📋 先發打線 <button onclick="autoLineup()" style="font-size:0.8rem;">一鍵最佳化</button></h3>
+                <table id="lineup-table">
+                    <thead><tr><th>棒次</th><th>球員選擇 (數值/體力)</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <div class="panel">
+                <h3>⚾ 投手輪值</h3>
+                <table id="rotation-table">
+                    <thead><tr><th>角色</th><th>球員選擇 (數值/體力)</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <div class="panel" style="border-color: var(--accent);">
+                <h3>📣 應援團 (Buff)</h3>
+                <p style="font-size:0.8rem; color:#aaa;">提升士氣，減少受傷率</p>
+                <div id="cheer-slots"></div>
+            </div>
+
+            <div class="panel" style="grid-column: span 3;">
+                <h3>📣 所有啦啦隊清單 (共 <span id="cheer-count">0</span> 人)</h3>
+                <div id="cheer-roster-view" style="display: flex; flex-wrap: wrap; gap: 8px; max-height: 120px; overflow-y: auto;"></div>
+            </div>
+            
+            <div class="panel" style="grid-column: span 3;">
+                <h3>🏥 球員狀態監控 (總數: <span id="roster-count">0</span>)</h3>
+                <p style="font-size:0.8rem; color:#aaa;">* 體力過低 (&lt;30) 容易受傷，受傷需休養 3-5 場。低體力守備員易失誤。</p>
+                <div id="roster-view" style="display: flex; flex-wrap: wrap; gap: 8px; max-height: 160px; overflow-y: auto;"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="tab-game" style="display: none; margin-top: 15px;">
+        <div class="game-layout">
+            <div class="panel">
+                <h3>🆚 對手 (<span id="opp-name">---</span>)</h3>
+                <div style="margin-bottom:10px; padding:8px; background:#263238; border-left:3px solid #ef5350;">
+                    <div style="font-size:0.8rem; color:#aaa;">先發投手</div>
+                    <div id="opp-sp" style="font-weight:bold;">---</div>
+                </div>
+                <div style="font-size:0.85rem; color:#bbb;">先發打線：</div>
+                <ul id="opp-lineup-list" style="padding-left:20px; font-size:0.8rem; color:#aaa;"></ul>
+            </div>
+
+            <div class="panel">
+                <div style="display: grid; grid-template-columns: 1fr 80px 1fr; align-items: center; padding: 10px; border-radius: 8px; margin-bottom: 10px; border: 1px solid #444; background: #000;">
+                    <div style="font-size: 2.5rem; font-weight: bold; text-align: center; color:var(--opp-team-color)" id="score-a">0</div>
+                    <div style="text-align:center;">
+                        <div id="inning-txt" style="color:var(--gold); font-weight:bold; font-size:1.2rem;">1局上</div>
+                        <div style="font-size:0.8rem; color:#ef5350;">LIVE</div>
+                    </div>
+                    <div style="font-size: 2.5rem; font-weight: bold; text-align: center; color:var(--my-team-color)" id="score-h">0</div>
+                </div>
+
+                <div style="background: #2e7d32; height: 180px; position: relative; border: 3px solid #1b5e20; border-radius: 8px; margin-bottom: 10px; overflow: hidden;">
+                    <div class="base b1" id="base-1" style="position: absolute; width: 20px; height: 20px; transform: rotate(45deg); right: 28%; top: 50%; background: rgba(255,255,255,0.8); border: 2px solid #aaa;"></div>
+                    <div class="base b2" id="base-2" style="position: absolute; width: 20px; height: 20px; transform: rotate(45deg); left: 50%; top: 20%; margin-left: -10px; background: rgba(255,255,255,0.8); border: 2px solid #aaa;"></div>
+                    <div class="base b3" id="base-3" style="position: absolute; width: 20px; height: 20px; transform: rotate(45deg); left: 28%; top: 50%; background: rgba(255,255,255,0.8); border: 2px solid #aaa;"></div>
+                    <div style="position:absolute; bottom:5px; right:5px; font-family:monospace; background:rgba(0,0,0,0.7); padding:3px; border-radius:3px; font-size:0.8rem;">
+                        S:<span id="cnt-s">0</span> B:<span id="cnt-b">0</span> O:<span id="cnt-o">0</span>
+                    </div>
+                </div>
+
+                <div style="display:flex; justify-content:space-between; background:#333; padding:5px; border-radius:5px; font-size:0.85rem; margin-bottom:5px;">
+                    <span>投: <strong id="curr-p" style="color:white">---</strong></span>
+                    <span>打: <strong id="curr-b" style="color:white">---</strong></span>
+                </div>
+
+                <div id="play-log">請點擊下方按鈕開始比賽...</div>
+                <button class="btn btn-play" id="btn-start" onclick="startGame()">📡 開始比賽 (消耗體力)</button>
+            </div>
+
+            <div class="panel">
+                <h3>🏠 我方狀態</h3>
+                <div style="margin-bottom:10px;">
+                    <div style="font-size:0.85rem; color:#aaa;">當前進攻/守備球員:</div>
+                    <div id="my-current-action" style="font-weight:bold; color:white;">---</div>
+                </div>
+                
+                <div style="font-size:0.85rem; margin-bottom:5px;">目前我方投手體力：</div>
+                <div id="my-pitcher-sta" style="height:10px; background:#444; border-radius:5px; overflow:hidden; margin-bottom:15px;">
+                    <div style="width:100%; height:100%; background:#4caf50;"></div>
+                </div>
+                <div style="font-size:0.85rem; color:#aaa;">牛棚待命：</div>
+                <div id="bullpen-display" style="font-size:0.8rem;"></div>
+                <hr style="border-color:#444; margin:10px 0;">
+                <div style="font-size:0.85rem; color:var(--accent);">📣 應援中：</div>
+                <div id="active-cheer" style="font-size:0.8rem;"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="tab-scout" style="display: none; margin-top: 15px;">
+        <div class="panel" style="max-width: 600px; margin: 0 auto; text-align: center;">
+            <h3>💎 綜合球探中心</h3>
+            <p style="color:#aaa; font-size:0.9rem;">
+                包含：歷史名將(SSR)、現役球星、<b>跨界啦啦隊(籃球/棒球)</b><br>
+                <span style="color:var(--accent)">★ 啦啦隊專屬效果：恢復體力、減少受傷</span>
+            </p>
+            <button class="btn btn-gacha" onclick="gacha()">✨ 花費 $1000 招募</button>
+            <div class="gacha-box" id="gacha-result"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ================= 1. 龐大資料庫與中文化 =================
+
+const POS_ZH = {
+    'P': '投手', 'C': '捕手', '1B': '一壘手', '2B': '二壘手', '3B': '三壘手',
+    'SS': '游擊手', 'LF': '左外野', 'CF': '中外野', 'RF': '右外野', 'DH': '指定打擊',
+    'IF': '內野手', 'OF': '外野手' // 增加二軍用語
+};
+
+const CHEER_DB = [
+    {n:"林襄",t:"Dragons",r:"SSR",buff:"打擊"}, {n:"李多慧",t:"Dragons",r:"SSR",buff:"速度"},
+    {n:"峮峮",t:"Brothers",r:"SSR",buff:"防守"}, {n:"短今",t:"Brothers",r:"SR",buff:"體力"},
+    {n:"Yuri",t:"Lions",r:"SSR",buff:"打擊"}, {n:"瑟七",t:"Lions",r:"SR",buff:"體力"},
+    {n:"慈妹",t:"Guardians",r:"SR",buff:"速度"}, {n:"丹丹",t:"Guardians",r:"SR",buff:"防守"},
+    {n:"籃籃",t:"Monkeys",r:"SSR",buff:"全能"}, {n:"琳妲",t:"Monkeys",r:"SR",buff:"打擊"},
+    {n:"一粒",t:"Hawks",r:"SR",buff:"速度"}, {n:"安芝儇",t:"Hawks",r:"SSR",buff:"全能"},
+    {n:"梓梓",t:"Formosa Sexy",r:"SSR",buff:"防守"}, {n:"壯壯",t:"Formosa Sexy",r:"SR",buff:"體力"},
+    {n:"Mina",t:"Taishin Wonders",r:"SR",buff:"速度"}, {n:"Faye",t:"Pilots Crew",r:"SR",buff:"打擊"}
+];
+
+const TEAMS = {
+    "brothers": { name: "中信兄弟", logo: "🐘", cheers:["峮峮","短今","波波"], roster: [
+        {n:"德保拉",p:"P",r:"SSR"}, {n:"猛登",p:"P",r:"SR"}, {n:"江坤宇",p:"SS",r:"SSR"}, {n:"王威晨",p:"3B",r:"SR"}, {n:"陳俊秀",p:"1B",r:"SR"}, {n:"岳東華",p:"2B",r:"R"}, {n:"曾頌恩",p:"RF",r:"SR"}, {n:"岳政華",p:"CF",r:"R"}, {n:"高宇杰",p:"C",r:"R"}, {n:"詹子賢",p:"LF",r:"R"}
+    ]},
+    "lions": { name: "統一獅", logo: "🦁", cheers:["Yuri","瑟七","艾璐"], roster: [
+        {n:"勝騎士",p:"P",r:"SSR"}, {n:"古林睿煬",p:"P",r:"SSR"}, {n:"陳傑憲",p:"CF",r:"SSR"}, {n:"林安可",p:"RF",r:"SSR"}, {n:"邱智呈",p:"LF",r:"SR"}, {n:"陳重羽",p:"C",r:"R"}, {n:"林益全",p:"1B",r:"R"}, {n:"潘傑楷",p:"3B",r:"R"}, {n:"陳聖平",p:"SS",r:"R"}, {n:"陳重廷",p:"2B",r:"N"}
+    ]},
+    "dragons": { name: "味全龍", logo: "🐲", cheers:["林襄","李多慧","小映"], roster: [
+        {n:"徐若熙",p:"P",r:"SSR"}, {n:"鋼龍",p:"P",r:"SR"}, {n:"吉力吉撈",p:"C",r:"SSR"}, {n:"李凱威",p:"2B",r:"SR"}, {n:"郭天信",p:"CF",r:"SR"}, {n:"劉基鴻",p:"3B",r:"SR"}, {n:"拿莫伊漾",p:"1B",r:"R"}, {n:"張政禹",p:"SS",r:"R"}, {n:"林孝程",p:"LF",r:"R"}, {n:"張祐銘",p:"RF",r:"N"}
+    ]},
+    "guardians": { name: "富邦悍將", logo: "🛡️", cheers:["慈妹","丹丹","秀秀子"], roster: [
+        {n:"羅戈",p:"P",r:"SSR"}, {n:"富藍戈",p:"P",r:"SR"}, {n:"張育成",p:"SS",r:"SSR"}, {n:"戴培峰",p:"C",r:"SR"}, {n:"范國宸",p:"1B",r:"R"}, {n:"王正棠",p:"2B",r:"SR"}, {n:"申皓瑋",p:"CF",r:"R"}, {n:"李宗賢",p:"3B",r:"R"}, {n:"孔念恩",p:"RF",r:"N"}, {n:"陳真",p:"LF",r:"N"}
+    ]},
+    "monkeys": { name: "樂天桃猿", logo: "🦍", cheers:["籃籃","琳妲","Yuri"], roster: [
+        {n:"威能帝",p:"P",r:"SSR"}, {n:"黃子鵬",p:"P",r:"SR"}, {n:"林立",p:"2B",r:"SSR"}, {n:"朱育賢",p:"1B",r:"SR"}, {n:"陳晨威",p:"CF",r:"SR"}, {n:"梁家榮",p:"3B",r:"SR"}, {n:"廖健富",p:"DH",r:"SR"}, {n:"馬傑森",p:"SS",r:"R"}, {n:"宋嘉翔",p:"C",r:"R"}, {n:"成晉",p:"RF",r:"N"}
+    ]},
+    "hawks": { name: "台鋼雄鷹", logo: "🦅", cheers:["安芝儇","一粒","Mingo"], roster: [
+        {n:"魔鷹",p:"1B",r:"SSR"}, {n:"吳念庭",p:"3B",r:"SR"}, {n:"王柏融",p:"DH",r:"SR"}, {n:"哈瑪星",p:"P",r:"SR"}, {n:"江承諺",p:"P",r:"R"}, {n:"曾子祐",p:"SS",r:"R"}, {n:"陳文杰",p:"CF",r:"R"}, {n:"張肇元",p:"C",r:"R"}, {n:"杜家明",p:"2B",r:"N"}, {n:"藍寅倫",p:"LF",r:"N"}
+    ]}
+};
+
+const HISTORY = [
+    {n:"王建民",p:"P",r:"SSR"}, {n:"陳金鋒",p:"DH",r:"SSR"}, {n:"彭政閔",p:"1B",r:"SSR"}, 
+    {n:"黃平洋",p:"P",r:"SSR"}, {n:"張泰山",p:"3B",r:"SR"}, {n:"林智勝",p:"SS",r:"SR"}
+];
+
+// ================= 2. 系統狀態 =================
+let money = 10000;
+let myRoster = []; 
+let lineup = new Array(9).fill(null);
+let rotation = { SP:null, RP1:null, RP2:null, CP:null };
+let activeCheers = [null, null, null]; 
+
+let game = { active:false, inning:1, top:true, outs:0, bases:[0,0,0], score:{a:0,h:0}, batIdx:{a:0,h:0}, counts:{s:0, b:0} };
+let opponent = { name:"", lineup:[], pitcher:null };
+let currentPitcher = null; // 追蹤我方場上投手
+
+function genStats(r) {
+    let base = r==="SSR"?92 : r==="SR"?82 : r==="R"?72 : 62;
+    let rand = ()=>Math.floor(Math.random()*10);
+    let s = { con:base+rand(), pwr:base+rand(), spd:base+rand(), def:base+rand(), stu:base+rand(), total:0 };
+    s.total = Math.floor((s.con+s.pwr+s.spd+s.def)/4);
+    return s;
+}
+
+function createUnit(data, type='player') {
+    let u = {
+        id: Math.random().toString(36).substr(2,9), name: data.n, type: type, rarity: data.r || "N", 
+        pos: data.p || "Cheer", stamina: 100, injury: 0
+    };
+    if(type==='player') u.stats = genStats(u.rarity);
+    else u.buff = data.buff || "士氣";
+    return u;
+}
+
+// ================= 3. 初始化與 UI 渲染 =================
+
+function init() {
+    const grid = document.getElementById('team-list');
+    for(let k in TEAMS) {
+        let t = TEAMS[k];
+        grid.innerHTML += `
+            <div class="team-card" onclick="selectTeam('${k}')">
+                <div class="team-logo">${t.logo}</div>
+                <h3>${t.name}</h3>
+            </div>`;
+    }
+}
+
+function selectTeam(key) {
+    let t = TEAMS[key];
+    
+    myRoster = [];
+    lineup = new Array(9).fill(null);
+    rotation = { SP:null, RP1:null, RP2:null, CP:null };
+
+    // 初始核心球員
+    t.roster.forEach(p => myRoster.push(createUnit(p)));
+    
+    // 增加板凳球員 (確保有足夠投手)
+    for(let i=0; i<12; i++) {
+        let pos;
+        if (i < 4) pos = 'P'; // 4位二軍投手
+        else if (i < 8) pos = 'IF'; // 4位內野手 (當作 3B/SS)
+        else pos = 'OF'; // 4位外野手 (當作 LF/RF)
+        myRoster.push(createUnit({n:`二軍${i}`,p:pos,r:'N'}));
+    }
+    
+    // 初始啦啦隊
+    t.cheers.forEach(cName => {
+        let cData = CHEER_DB.find(x => x.n === cName) || {n:cName, r:"R", buff:"士氣"};
+        myRoster.push(createUnit(cData, 'cheer'));
+    });
+    
+    // 初始SSR大禮包
+    let gift = HISTORY[Math.floor(Math.random()*HISTORY.length)];
+    myRoster.push(createUnit(gift));
+
+    // 自動填充打線和投手輪值
+    let availableBatters = myRoster.filter(p => p.type === 'player' && p.pos !== 'P').sort((a,b)=>b.stats.total-a.stats.total);
+    for(let i = 0; i < 9; i++) {
+        lineup[i] = availableBatters[i] || null;
+    }
+
+    let availablePitchers = myRoster.filter(p => p.type === 'player' && p.pos === 'P').sort((a,b)=>b.stats.total-a.stats.total);
+    rotation.SP = availablePitchers[0] || null;
+    rotation.RP1 = availablePitchers[1] || null;
+    rotation.RP2 = availablePitchers[2] || null;
+    rotation.CP = availablePitchers[3] || null;
+
+    document.getElementById('screen-select').classList.remove('active');
+    document.getElementById('screen-main').classList.add('active');
+    renderUI();
+}
+
+function renderUI() {
+    renderLineupTable();
+    renderRotationTable();
+    renderCheerSlots();
+    renderCheerList(); 
+    renderRosterList();
+    document.getElementById('money-val').innerText = `$${money.toLocaleString()}`;
+}
+
+function renderLineupTable() {
+    const tb = document.querySelector('#lineup-table tbody');
+    tb.innerHTML = "";
+    for(let i=0; i<9; i++) {
+        let curr = lineup[i];
+        let opts = `<option value="-1">-- 空缺 --</option>`;
+        let list = myRoster.filter(p => p.type==='player' && p.pos!=='P');
+        list.forEach(p => {
+            let isUsed = lineup.some(x=>x&&x.id===p.id);
+            if(isUsed && (!curr || curr.id!==p.id)) return;
+            let disabled = p.injury > 0 ? 'disabled' : '';
+            let injTxt = p.injury > 0 ? ` (傷${p.injury}場)` : '';
+            let pos_zh = POS_ZH[p.pos] || p.pos;
+            let sel = (curr&&curr.id===p.id)?'selected':'';
+            opts += `<option value="${p.id}" ${sel} ${disabled}>
+                ${p.name} (${pos_zh}) - 評:${p.stats.total} 體:${p.stamina.toFixed(0)}${injTxt}
+            </option>`;
+        });
+        tb.innerHTML += `<tr><td>${i+1}棒</td><td><select onchange="setLineup(${i},this.value)">${opts}</select></td></tr>`;
+    }
+}
+
+function renderRotationTable() {
+    const tb = document.querySelector('#rotation-table tbody');
+    tb.innerHTML = "";
+    ['SP','RP1','RP2','CP'].forEach(role => {
+        let curr = rotation[role];
+        let opts = `<option value="-1">-- 空缺 --</option>`;
+        let list = myRoster.filter(p => p.type==='player' && p.pos==='P');
+        list.forEach(p => {
+            let isUsed = Object.values(rotation).some(x=>x&&x.id===p.id);
+            if(isUsed && (!curr || curr.id!==p.id)) return;
+            let disabled = p.injury > 0 ? 'disabled' : '';
+            let injTxt = p.injury > 0 ? ` (傷${p.injury}場)` : '';
+            let sel = (curr&&curr.id===p.id)?'selected':'';
+            opts += `<option value="${p.id}" ${sel} ${disabled}>
+                ${p.name} - 威:${p.stats.stu} 體:${p.stamina.toFixed(0)}${injTxt}
+            </option>`;
+        });
+        tb.innerHTML += `<tr><td>${role}</td><td><select onchange="setRot('${role}',this.value)">${opts}</select></td></tr>`;
+    });
+}
+
+function renderCheerSlots() {
+    const div = document.getElementById('cheer-slots');
+    div.innerHTML = "";
+    for(let i=0; i<3; i++) {
+        let curr = activeCheers[i];
+        let opts = `<option value="-1">-- 無 --</option>`;
+        let list = myRoster.filter(u => u.type==='cheer');
+        list.forEach(c => {
+            let isUsed = activeCheers.some(x=>x&&x.id===c.id);
+            if(isUsed && (!curr || curr.id!==c.id)) return;
+            let sel = (curr&&curr.id===c.id)?'selected':'';
+            opts += `<option value="${c.id}" ${sel}>${c.name} [${c.buff}]</option>`;
+        });
+        div.innerHTML += `<div style="margin-bottom:5px;"><select onchange="setCheer(${i},this.value)">${opts}</select></div>`;
+    }
+}
+
+function renderCheerList() { 
+    const v = document.getElementById('cheer-roster-view');
+    let cheerleaders = myRoster.filter(u => u.type === 'cheer');
+    document.getElementById('cheer-count').innerText = cheerleaders.length;
+    v.innerHTML = cheerleaders.map(c => 
+        `<span class="cheer-item r-${c.rarity}">
+         ${c.name} (${c.buff})
+         </span>`
+    ).join('');
+}
+
+function renderRosterList() {
+    const v = document.getElementById('roster-view');
+    document.getElementById('roster-count').innerText = myRoster.filter(u=>u.type==='player').length;
+    v.innerHTML = myRoster.map(u => {
+        if(u.type === 'cheer') return "";
+        let injClass = u.injury > 0 ? "injured" : "";
+        let staColor = u.stamina > 80 ? "#4caf50" : u.stamina > 40 ? "#ff9800" : "#f44336";
+        let pos_zh = POS_ZH[u.pos] || u.pos;
+        return `
+            <div style="background:#333; padding:5px; border-radius:4px; font-size:0.8rem; width:120px;">
+                <div class="${injClass}"><span class="r-${u.rarity}">${u.name}</span> <small>(${pos_zh}) ${u.injury>0?'🏥'+u.injury:''}</small></div>
+                <div style="display:flex; align-items:center; gap:5px;">
+                    <small>體:</small>
+                    <div class="sta-bar-bg"><div class="sta-bar-fill" style="width:${u.stamina.toFixed(0)}%; background:${staColor}"></div></div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function setLineup(i, id) { lineup[i] = id==="-1"?null:myRoster.find(u=>u.id===id); renderUI(); }
+function setRot(r, id) { rotation[r] = id==="-1"?null:myRoster.find(u=>u.id===id); renderUI(); }
+function setCheer(i, id) { activeCheers[i] = id==="-1"?null:myRoster.find(u=>u.id===id); renderUI(); }
+
+function autoLineup() {
+    let bat = myRoster.filter(u=>u.type==='player' && u.pos!=='P' && u.injury===0).sort((a,b)=>b.stats.total-a.stats.total);
+    for(let i=0; i<9; i++) lineup[i] = bat[i] || null;
+    
+    let availablePitchers = myRoster.filter(p => p.type === 'player' && p.pos === 'P' && p.injury === 0).sort((a,b)=>b.stats.total-a.stats.total);
+    rotation.SP = availablePitchers[0] || null;
+    rotation.RP1 = availablePitchers[1] || null;
+    rotation.RP2 = availablePitchers[2] || null;
+    rotation.CP = availablePitchers[3] || null;
+
+    renderUI();
+}
+
+function startGame() {
+    if(lineup.includes(null)) { alert("打線不完整"); return; }
+    if(!rotation.SP) { alert("無先發投手"); return; }
+    
+    let requiredP = ['SP','RP1','RP2','CP'].filter(r => rotation[r] === null);
+    if(requiredP.length > 0) {
+        if(!confirm(`牛棚缺少 ${requiredP.join('/')}，可能會讓先發投手過度勞累。確定開始嗎？`)) return; 
+    }
+    
+    if(rotation.SP.stamina < 30) { 
+        if(!confirm("先發投手體力極低！強行出賽極可能受傷，確定嗎？")) return; 
+    }
+    
+    game.active = true; game.inning=1; game.top=true; game.outs=0; game.bases=[0,0,0]; game.score={a:0,h:0}; game.batIdx={a:0,h:0};
+    game.counts = {s:0, b:0};
+    
+    genOpponent();
+    currentPitcher = rotation.SP;
+    updateBoard();
+    
+    let buffs = activeCheers.filter(c=>c).map(c=>c.buff);
+    document.getElementById('active-cheer').innerText = buffs.length ? buffs.join('、') : "無";
+    document.getElementById('bullpen-display').innerText = ['RP1','RP2','CP'].map(r=> rotation[r] ? `${rotation[r].name} (體:${rotation[r].stamina.toFixed(0)})` : "-").join(' / ');
+
+    document.getElementById('btn-start').disabled = true;
+    document.getElementById('btn-start').innerText = "轉播中...";
+    log(">>> 比賽開始 <<<", "log-hl");
+    
+    setTimeout(playPhase, 1000);
+}
+
+// ================= 4. 核心遊戲邏輯 (新增換投與扣倒) =================
+
+function checkSubstitution() {
+    if (!currentPitcher || currentPitcher.stamina >= 20) return false;
+
+    const roles = ['RP1', 'RP2', 'CP'];
+    for (const role of roles) {
+        let reliever = rotation[role];
+        if (reliever && reliever.stamina > 40 && reliever.injury === 0) {
+            const oldPName = currentPitcher.name;
+            currentPitcher = reliever;
+            rotation.SP = reliever;
+            
+            log(`🔄 換投！ <span class="my-team-color">${oldPName}</span> (體力:${currentPitcher.stamina.toFixed(0)}) 退場，由 <span class="my-team-color">${reliever.name}</span> 接替。`, "log-hl");
+            document.getElementById('bullpen-display').innerText = ['RP1','RP2','CP'].map(r=> rotation[r] ? `${rotation[r].name} (體:${rotation[r].stamina.toFixed(0)})` : "-").join(' / ');
+            return true;
+        }
+    }
+    
+    if (currentPitcher.stamina < 5) {
+        log(`🚨 警告！牛棚無人，<span class="my-team-color">${currentPitcher.name}</span> 體力耗盡，被迫續投！`, "log-error");
+    }
+    return false;
+}
+
+function simulateAtBat() {
+    game.counts = {s:0, b:0};
+    const P = game.top ? currentPitcher : opponent.pitcher;
+    const B = game.top ? opponent.lineup[game.batIdx.a % 9] : lineup[game.batIdx.h % 9];
+    const isHomeDef = game.top;
+    const myColor = 'my-team-color';
+    const oppColor = 'opp-team-color';
+    const P_color = isHomeDef ? myColor : oppColor;
+    const B_color = isHomeDef ? oppColor : myColor;
+
+    document.getElementById('curr-p').innerHTML = `<span class="${P_color}">${P.name}</span>`;
+    document.getElementById('curr-b').innerHTML = `<span class="${B_color}">${B.name}</span>`;
+    updateBoard();
+
+    let bonus = 0;
+    if(!game.top) { activeCheers.filter(c=>c).forEach(c => { if(c.buff==="打擊"||c.buff==="全能") bonus+=8; }); }
+
+    let outcome = null;
+
+    while (!outcome) {
+        const fatiguePenalty = P.stamina < 20 ? (20 - P.stamina) * 0.5 : 0;
+        let pitchDiff = (B.stats.con + bonus) - P.stats.stu - fatiguePenalty + (Math.random()*40 - 20); 
+
+        if (P.type === 'player' && isHomeDef) {
+            P.stamina = Math.max(0, P.stamina - 0.2);
+            updateStaBar();
+        }
+
+        if (pitchDiff > 10) {
+            // 優秀擊球 (Contact for hit/HR)
+            let hitPowerDiff = (B.stats.pwr + bonus) - P.stats.total + (Math.random()*30 - 15);
+            if (hitPowerDiff > 20) {
+                outcome = 'HR';
+                log(`🔥 <span class="${B_color}">${B.name}</span> 炸裂！全壘打！`, "log-hl");
+            } else {
+                outcome = 'Hit';
+                handleDefense(B, isHomeDef, B_color, hitPowerDiff);
+            }
+            if (B.type === 'player' && !isHomeDef) B.stamina = Math.max(0, B.stamina - 0.5);
+
+        } else if (pitchDiff > -15) {
+            // 差勁擊球 (Foul/Miss/Out)
+            if (Math.random() < 0.3 && game.counts.s < 2) {
+                game.counts.s++;
+                log(`⚾ <span class="${B_color}">${B.name}</span> 揮棒落空，計好球。`);
+            } else if (game.counts.s < 2) {
+                game.counts.s++;
+                log(`🩹 <span class="${B_color}">${B.name}</span> 擦棒界外，計好球。`);
+                if (B.type === 'player' && !isHomeDef) B.stamina = Math.max(0, B.stamina - 0.1);
+            } else {
+                outcome = 'Out';
+                handleDefense(B, isHomeDef, B_color, -20); 
+            }
+        } else {
+            // 壞球 (Ball)
+            game.counts.b++;
+            log(`⚪ 投手投出壞球。`);
+        }
+        
+        if (game.counts.s >= 3) {
+            outcome = 'SO';
+            log(`💨 <span class="${B_color}">${B.name}</span> 遭到三振！`, "log-out");
+        } else if (game.counts.b >= 4) {
+            outcome = 'BB';
+            log(`🚶 <span class="${B_color}">${B.name}</span> 獲得四壞保送！`, "log-out");
+        }
+        
+        if (outcome) {
+            if (outcome === 'BB') scoreRun(0);
+            else if (outcome === 'HR') scoreRun(4);
+            else if (outcome === 'SO' || outcome === 'Out') addOut();
+
+            game.counts = {s:0, b:0};
+            updateBoard();
+            return;
+        }
+
+        updateBoard(); 
+    }
+}
+
+
+function playPhase() {
+    if(!game.active) return;
+    
+    // --- 扣倒條款檢查 (Mercy Rule) ---
+    if (game.inning >= 5 && Math.abs(game.score.a - game.score.h) >= 10) {
+        log(`⚠️ 提前結束！比數差距過大 (10分差)，啟動扣倒條款。`, "log-error");
+        endGame();
+        return;
+    }
+
+    // --- 正常結束條件 ---
+    if(game.inning>9 && game.score.a!==game.score.h) { endGame(); return; }
+    if(game.inning>=9 && !game.top && game.score.h>game.score.a) { endGame(); return; }
+
+    if (game.top) {
+        checkSubstitution();
+    }
+    
+    simulateAtBat();
+
+    if(game.top) game.batIdx.a++; else game.batIdx.h++;
+    if(game.active) setTimeout(playPhase, 2000);
+}
+
+function handleDefense(batter, isHomeDef, B_color, hitPowerDiff) {
+    const myColor = 'my-team-color';
+    const oppColor = 'opp-team-color';
+    const D_color = isHomeDef ? myColor : oppColor;
+    
+    let locs = ["SS","3B","2B","1B","CF","RF","LF"];
+    let loc = locs[Math.floor(Math.random()*locs.length)];
+    let loc_zh = POS_ZH[loc] || loc;
+    
+    let type = ["滾地球","平飛球","高飛球"][Math.floor(Math.random()*3)];
+    let verb = type==="滾地球" ? "滾向" : type==="平飛球" ? "射向" : "飛向";
+    
+    let fielder = null;
+    let defRoster = isHomeDef ? lineup : opponent.lineup;
+
+    let f = defRoster.find(x => x && (x.pos === loc || x.pos === 'IF' && ['3B','SS','2B','1B'].includes(loc) || x.pos === 'OF' && ['LF','CF','RF'].includes(loc)));
+    if (!f) f = defRoster.find(x => x && x.pos === 'SS');
+    if (!f) f = defRoster.find(x => x && x.pos === 'C');
+    fielder = f;
+
+    let isHit = false;
+    let baseHit = 1;
+    
+    let defenseModifier = (hitPowerDiff > 10) ? 1.5 : 1; 
+
+    let defenseValue = (fielder && fielder.type === 'player') ? fielder.stats.def / 100 : 0.6;
+    let hitChance = 0.5 + (hitPowerDiff / 50) * defenseModifier;
+    
+    if (Math.random() < hitChance) {
+        isHit = true;
+        if (hitPowerDiff > 15) baseHit = 2;
+        log(`📢 <span class="${B_color}">${batter.name}</span> 將球擊向 ${loc_zh}，形成${baseHit}壘安打！`, "log-hl");
+    } else {
+        let errorChance = 0;
+        if (fielder && fielder.type === 'player') {
+            errorChance = (100 - fielder.stats.def) * 0.4;
+            errorChance += (100 - fielder.stamina) * 0.2;
+            errorChance = Math.max(1, errorChance); 
+        } else {
+            errorChance = 10; 
+        }
+
+        if(Math.random() * 100 < errorChance) {
+            log(`[E] <span class="${B_color}">${batter.name}</span> ${verb}${loc_zh}！ <span class="${D_color}">${fielder.name||'野手'}</span> 處理失誤！`, "log-error");
+            isHit = true; 
+        } else {
+            let fielderName = fielder ? fielder.name : "野手";
+            let outVerb = type==="滾地球" ? "刺殺出局" : "接殺出局";
+            log(`🔴 <span class="${B_color}">${batter.name}</span> ${verb}${loc_zh}，被 <span class="${D_color}">${fielderName}</span> ${outVerb}。`, "log-out");
+            addOut();
+        }
+    }
+
+    if (isHit) {
+        scoreRun(baseHit);
+    }
+}
+
+function scoreRun(n) {
+    let r = 0;
+    if(n===4) { r=1+game.bases.reduce((a,b)=>a+b,0); game.bases=[0,0,0]; }
+    else {
+        // 推進跑者 (n=1 for single, n=2 for double, n=0 for walk)
+        let runners = [...game.bases]; 
+        game.bases=[0,0,0];
+        
+        for(let i=2; i>=0; i--) {
+            if(runners[i]) {
+                if (i + n >= 3) { r++; }
+                else { game.bases[i+n] = 1; }
+            }
+        }
+
+        // 打者上壘
+        if (n > 0) game.bases[n-1]=1; // 1B/2B 安打
+        if (n === 0) game.bases[0]=1; // 四壞保送
+
+        // 處理保送時的推進問題
+        if (n === 0) {
+            if (runners[0] && runners[1] && runners[2]) r++; // 滿壘推擠得分
+            else if (runners[0] && runners[1]) game.bases[2]=1; 
+            else if (runners[0]) game.bases[1]=1; 
+            game.bases[0] = 1; // 打者上一壘
+        }
+        
+        // 確保壘包狀態是 0 或 1
+        game.bases = game.bases.map(b => b > 1 ? 1 : b); 
+    }
+    
+    if(r>0) {
+        if(game.top) game.score.a+=r; else game.score.h+=r;
+        log(`>>> 得 ${r} 分`, "log-score");
+    }
+    updateBoard();
+}
+
+
+function addOut() {
+    game.outs++;
+    if(game.outs>=3) {
+        log("--- 換局 ---");
+        game.outs=0; game.bases=[0,0,0];
+        if(game.top) game.top=false; else { 
+            game.top=true; game.inning++; 
+            if (rotation.SP !== currentPitcher) rotation.SP = currentPitcher;
+        }
+    }
+    updateBoard();
+}
+
+function updateStaBar() {
+    if (!currentPitcher) return;
+    let p = currentPitcher;
+    let bar = document.getElementById('my-pitcher-sta').children[0];
+    bar.style.width = p.stamina + "%";
+    bar.style.background = p.stamina>50?"#4caf50":"#f44336";
+}
+
+function updateBoard() {
+    document.getElementById('score-a').innerText = game.score.a;
+    document.getElementById('score-h').innerText = game.score.h;
+    document.getElementById('inning-txt').innerText = `${game.inning}${game.top?'上':'下'}`;
+    document.getElementById('cnt-o').innerText = game.outs;
+    document.getElementById('cnt-s').innerText = game.counts.s;
+    document.getElementById('cnt-b').innerText = game.counts.b;
+    
+    ['1','2','3'].forEach((k,i)=> {
+        const baseElement = document.getElementById(`base-${k}`);
+        if (game.bases[i]) {
+            baseElement.classList.add('active');
+        } else {
+            baseElement.classList.remove('active');
+        }
+    });
+
+    let current_status_html = "--- 休息中 ---";
+    if (game.active) {
+        const P = game.top ? currentPitcher : opponent.pitcher;
+        const B = game.top ? opponent.lineup[game.batIdx.a % 9] : lineup[game.batIdx.h % 9];
+        
+        if (game.top) {
+            current_status_html = `守備投手: <span class="my-team-color">${P ? P.name : 'N/A'}</span> (體:${P ? P.stamina.toFixed(0) : 'N/A'}) / 對手打者: <span class="opp-team-color">${B.name}</span>`;
+        } else {
+            current_status_html = `我方打者: <span class="my-team-color">${B.name}</span> (體:${B.stamina.toFixed(0)}) / 對手投手: <span class="opp-team-color">${P.name}</span>`;
+        }
+    }
+    document.getElementById('my-current-action').innerHTML = current_status_html;
+    updateStaBar();
+}
+
+function endGame() {
+    game.active = false;
+    let win = game.score.h > game.score.a;
+    let rwd = win ? 2000 : 500;
+    money += rwd; updateMoney();
+    log(`🏁 比賽結束！ ${win?'獲勝':'落敗'}，獲得 $${rwd}`, "log-hl");
+    
+    let healBuff = activeCheers.some(c=>c&&c.buff==="全能"||c&&c.buff==="體力");
+    myRoster.forEach(u => {
+        if(u.type === 'cheer') return;
+        
+        // 檢查是否上場
+        const rotation_ids = Object.values(rotation).filter(p=>p).map(p=>p.id);
+        const lineup_ids = lineup.filter(p=>p).map(p=>p.id);
+        const played = rotation_ids.includes(u.id) || lineup_ids.includes(u.id);
+        
+        if(played) {
+            let drain = u.pos==='P' ? 20 : 5;
+            if(healBuff) drain *= 0.7;
+            u.stamina = Math.max(0, u.stamina - drain);
+            
+            // 受傷判定
+            if(u.stamina < 30) {
+                let risk = (30 - u.stamina) * 0.02; 
+                if(healBuff) risk *= 0.5;
+                if(Math.random() < risk) {
+                    u.injury = Math.floor(Math.random()*3) + 3; 
+                    log(`🏥 <span class="my-team-color">${u.name}</span> 因過勞受傷！需休養 ${u.injury} 場`, "log-inj");
+                    // 受傷後自動從陣容/輪值中移除
+                    let idx = lineup.findIndex(x=>x&&x.id===u.id);
+                    if(idx!==-1) lineup[idx] = null;
+                    for(let r in rotation) { if(rotation[r] && rotation[r].id === u.id) rotation[r] = null; }
+                }
+            }
+        } else {
+            if(u.injury > 0) {
+                u.injury--;
+                if(u.injury === 0) {
+                    u.stamina = 60; 
+                    log(`✨ <span class="my-team-color">${u.name}</span> 傷癒歸隊！`);
+                }
+            } else {
+                // 未上場球員體力恢復
+                u.stamina = Math.min(100, u.stamina + 15);
+            }
+        }
+    });
+
+    document.getElementById('btn-start').disabled = false;
+    document.getElementById('btn-start').innerText = "📡 下一場比賽";
+    renderUI(); 
+}
+
+function log(msg, cls) {
+    let d = document.createElement('div'); d.className=cls; d.innerHTML=msg;
+    let b = document.getElementById('play-log'); b.appendChild(d); b.scrollTop=b.scrollHeight;
+}
+function updateMoney() { document.getElementById('money-val').innerText = `$${money.toLocaleString()}`; }
+function setTab(t) {
+    ['roster','game','scout'].forEach(x=>document.getElementById(`tab-${x}`).style.display='none');
+    document.getElementById(`tab-${t}`).style.display='block';
+    document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+    event.target.classList.add('active');
+}
+function genOpponent() {
+    let keys = Object.keys(TEAMS); let t = TEAMS[keys[Math.floor(Math.random()*keys.length)]];
+    document.getElementById('opp-name').innerText = t.name;
+    let spData = t.roster.find(x=>x.p==='P') || {n:"洋投",r:"R"};
+    opponent.pitcher = createUnit(spData);
+    document.getElementById('opp-sp').innerText = `${opponent.pitcher.name} (評:${opponent.pitcher.stats.total})`;
+    opponent.lineup = [];
+    let needs = ["CF","SS","1B","DH","3B","LF","C","RF","2B"];
+    for(let p of needs) { let d = t.roster.find(x=>x.p===p)||{n:`${p}手`,p:p,r:"N"}; opponent.lineup.push(createUnit(d)); }
+    document.getElementById('opp-lineup-list').innerHTML = opponent.lineup.map((p,i)=>`<li>${i+1}.${p.name} (${POS_ZH[p.pos]||p.pos})</li>`).join('');
+}
+
+function gacha() {
+    if(money < 1000) { alert("沒錢"); return; }
+    money -= 1000; updateMoney();
+    let rnd = Math.random()*100;
+    let unit;
+
+    if(rnd < 20) {
+        let c = CHEER_DB[Math.floor(Math.random()*CHEER_DB.length)]; unit = createUnit(c, 'cheer');
+    } else {
+        let r = "N"; if(rnd < 25) r = "SSR"; else if(rnd < 40) r = "SR"; else if(rnd < 60) r = "R";
+        let pool = []; 
+        if(r==="SSR" || r==="SR") {
+             pool = HISTORY.filter(x=>x.r===r);
+             if(pool.length === 0) pool = TEAMS.brothers.roster.filter(x=>x.r===r);
+        }
+        if(pool.length===0) pool = TEAMS.brothers.roster.filter(x=>x.r==='R');
+        if(pool.length===0) pool = [{n:"潛力新秀",p:'P',r:'N'}, {n:"潛力新秀",p:'IF',r:'N'}];
+
+        let data = pool[Math.floor(Math.random()*pool.length)];
+        data.y = 1990 + Math.floor(Math.random()*35); unit = createUnit(data);
+        unit.rarity = r; unit.stats = genStats(r);
+    }
+    
+    myRoster.push(unit); renderUI();
+
+    let box = document.getElementById('gacha-result');
+    let cls = unit.type==='cheer' ? "Girl" : unit.rarity;
+    box.innerHTML = `<div class="card-anim ${cls}">
+            <div style="font-weight:bold; color:var(--gold);">${unit.rarity}</div>
+            <h3 style="margin:5px 0;">${unit.name}</h3>
+            <div style="color:#aaa;">${unit.type==='cheer'?'📣 啦啦隊':POS_ZH[unit.pos]}</div>
+            <div style="font-size:0.8rem; margin-top:5px;">${unit.type==='cheer'?'效果: '+unit.buff:'總評: '+unit.stats.total}</div>
+        </div>`;
+}
+
+init();
+</script>
+</body>
+</html>
